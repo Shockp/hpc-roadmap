@@ -3,6 +3,7 @@ build/
 cmake-build-*/
 bin/
 lib/
+data/
 *.d
 *.o
 *.obj

@@ -45,6 +45,12 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 target_link_libraries(${PROJECT_NAME} PRIVATE MPI::MPI_CXX OpenMP::OpenMP_CXX)
 
 # -----------------------------------------------------------------------------
+# TOOL: Generador de Datasets Binarios
+# Crea el ejecutable auxiliar para generar los datos de prueba masivos.
+# -----------------------------------------------------------------------------
+add_executable(generate_dataset tools/file_generator.cpp)
+
+# -----------------------------------------------------------------------------
 # TARGET OPCIONAL: Formateador de código (Google C++ Style Guide)
 # Permite ejecutar `make format` para estandarizar el código automáticamente.
 # -----------------------------------------------------------------------------
