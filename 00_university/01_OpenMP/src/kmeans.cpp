@@ -163,16 +163,18 @@ Centroids RunKMeans(Dataset &local_data, uint32_t num_clusters,
     }
 
     auto get_owner_rank = [&](uint32_t cluster_id) -> int {
-      int base_clusters = num_clusters / num_procs;
-      int remainder = num_clusters % num_procs;
+      uint32_t base_clusters = num_clusters / static_cast<uint32_t>(num_procs);
+      uint32_t remainder = num_clusters % static_cast<uint32_t>(num_procs);
+
       if (base_clusters == 0) {
-        return cluster_id % num_procs;
+        return static_cast<int>(cluster_id % static_cast<uint32_t>(num_procs));
       }
 
       int rank_owner = 0;
-      int current_cluster_limit = 0;
+      uint32_t current_cluster_limit = 0;
       for (int i = 0; i < num_procs; ++i) {
-        current_cluster_limit += base_clusters + (i < remainder ? 1 : 0);
+        current_cluster_limit +=
+            base_clusters + (static_cast<uint32_t>(i) < remainder ? 1 : 0);
         if (cluster_id < current_cluster_limit) {
           rank_owner = i;
           break;
