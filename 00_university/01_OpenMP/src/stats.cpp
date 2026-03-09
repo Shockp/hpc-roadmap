@@ -7,6 +7,8 @@
 #include <limits>
 #include <vector>
 
+namespace openmp {
+
 std::vector<openmp::Column_stats>
 ComputeLocalStats(const openmp::Dataset &local_data, MPI_Comm comm) {
   const uint32_t num_rows = local_data.n_rows;
@@ -98,3 +100,5 @@ ComputeLocalStats(const openmp::Dataset &local_data, MPI_Comm comm) {
 
   return results;
 }
+
+} // namespace openmp

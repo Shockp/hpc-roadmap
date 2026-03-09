@@ -8,6 +8,8 @@
 #include "models/column_stats.h"
 #include "models/dataset.h"
 
+namespace openmp {
+
 /**
  * @brief Computes per-column statistics across all MPI ranks.
  *
@@ -30,5 +32,7 @@
  */
 std::vector<openmp::Column_stats>
 ComputeLocalStats(const openmp::Dataset &local_data, MPI_Comm = MPI_COMM_WORLD);
+
+} // namespace openmp
 
 #endif // UNIVERSITY_OPENMP_STATS_H_
