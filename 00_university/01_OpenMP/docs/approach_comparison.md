@@ -1,20 +1,20 @@
-# Comparativa de Enfoques — Código vs. Alternativas
+# Approach Comparison — Code vs. Alternatives
 
-Este documento recorre **cada fragmento de código del proyecto**, lo compara con enfoques alternativos, y explica por qué la implementación elegida es superior en rendimiento.
+This document walks through **every code fragment in the project**, compares it with alternative approaches, and explains why the chosen implementation is superior in performance.
 
 ---
 
-## 1. Estructuras de Datos (`include/models/`)
+## 1. Data Structures (`include/models/`)
 
-### 1.1. `Dataset` — Vector contiguo plano
+### 1.1. `Dataset` — Flat Contiguous Vector
 
-#### Nuestra implementación
+#### Our Implementation
 
 ```cpp
 struct Dataset {
   uint32_t n_rows;
   uint32_t n_cols;
-  std::vector<float> data;  // fila-mayor contiguo
+  std::vector<float> data;  // row-major contiguous
 
   inline const float *GetRowPtr(uint32_t row) const {
     return &data[row * n_cols];
@@ -22,7 +22,7 @@ struct Dataset {
 };
 ```
 
-#### Alternativa A: Array of Structures con `std::vector<Point>`
+#### Alternative A: Array of Structures with `std::vector<Point>`
 
 ```cpp
 struct Point {
@@ -34,23 +34,23 @@ struct DatasetAoS {
 };
 ```
 
-**¿Por qué es peor?**
+**Why is it worse?**
 
-1. **Doble indirección:** `points[i].features[j]` requiere dos punteros: uno al `Point`, otro al `vector<float>` interno. Cada acceso puede ser un *cache miss*.
-2. **Memoria fragmentada:** Cada `Point` tiene su propio `std::vector`, que aloja su buffer en el heap de forma independiente. Con 10 millones de puntos, hay 10 millones de allocaciones dispersas en RAM.
-3. **Imposible enviar por MPI:** No se puede hacer `MPI_Scatterv(points.data(), ...)` porque los datos no son contiguos. Hay que copiar todo a un buffer plano primero → doble memoria + tiempo de copia.
-4. **Sin vectorización SIMD:** El compilador no puede generar instrucciones AVX porque no puede garantizar que `features.data()` de un punto sea contiguo con el del siguiente.
+1. **Double indirection:** `points[i].features[j]` requires two pointers: one to the `Point`, another to the inner `vector<float>`. Each access can be a *cache miss*.
+2. **Fragmented memory:** Each `Point` has its own `std::vector`, which allocates its buffer on the heap independently. With 10 million points, there are 10 million allocations scattered across RAM.
+3. **Cannot send via MPI:** You cannot do `MPI_Scatterv(points.data(), ...)` because the data is not contiguous. You would need to copy everything to a flat buffer first → double memory + copy time.
+4. **No SIMD vectorization:** The compiler cannot generate AVX instructions because it cannot guarantee that `features.data()` of one point is contiguous with the next.
 
 ```
-Memoria con AoS (fragmentada):
+Memory with AoS (fragmented):
   Heap: [Point0.features → 0xA000] [Point1.features → 0xB400] [Point2.features → 0xC100]
-        dispersos por el heap → cache misses constantes
+        scattered across the heap → constant cache misses
 
-Memoria con SoA (contigua):
-  Heap: [x0,y0,z0, x1,y1,z1, x2,y2,z2, ...]  ← un solo bloque → prefetch óptimo
+Memory with SoA (contiguous):
+  Heap: [x0,y0,z0, x1,y1,z1, x2,y2,z2, ...]  ← single block → optimal prefetch
 ```
 
-#### Alternativa B: `float**` (punteros a punteros)
+#### Alternative B: `float**` (pointer to pointers)
 
 ```cpp
 float** data = new float*[n_rows];
@@ -58,41 +58,41 @@ for (int i = 0; i < n_rows; i++)
     data[i] = new float[n_cols];
 ```
 
-**¿Por qué es peor?**
+**Why is it worse?**
 
-- Misma fragmentación que AoS: cada fila es una allocación independiente.
-- `n_rows` llamadas a `new` → lento en la inicialización.
-- Memory leaks si no se hace `delete[]` de cada fila.
-- Patrón imposible de optimizar para el compilador.
+- Same fragmentation as AoS: each row is an independent allocation.
+- `n_rows` calls to `new` → slow initialization.
+- Memory leaks if `delete[]` is not called for each row.
+- Pattern impossible for the compiler to optimize.
 
-#### Alternativa C: `std::vector<std::vector<float>>`
+#### Alternative C: `std::vector<std::vector<float>>`
 
 ```cpp
 std::vector<std::vector<float>> data(n_rows, std::vector<float>(n_cols));
 ```
 
-**¿Por qué es peor?**
+**Why is it worse?**
 
-- Cada fila interior es un `vector` separado con su propia allocación heap → misma fragmentación.
-- Overhead de metadatos: cada `vector` almacena puntero, tamaño y capacidad (24 bytes extra por fila).
-- Con 10M filas: 240 MB solo en metadatos de vectores internos.
+- Each inner row is a separate `vector` with its own heap allocation → same fragmentation.
+- Metadata overhead: each `vector` stores a pointer, size, and capacity (24 extra bytes per row).
+- With 10M rows: 240 MB in inner vector metadata alone.
 
 ---
 
-### 1.2. `Centroids` — Misma filosofía contigua
+### 1.2. `Centroids` — Same Contiguous Philosophy
 
-#### Nuestra implementación
+#### Our Implementation
 
 ```cpp
 struct Centroids {
   uint32_t num_clusters;
   uint32_t num_cols;
-  std::vector<float> data;       // K × cols contiguo
-  std::vector<uint32_t> counts;  // tamaño de cada clúster
+  std::vector<float> data;       // K × cols contiguous
+  std::vector<uint32_t> counts;  // size of each cluster
 };
 ```
 
-#### Alternativa: `std::map<int, std::vector<float>>`
+#### Alternative: `std::map<int, std::vector<float>>`
 
 ```cpp
 std::map<int, std::vector<float>> centroids;
@@ -100,18 +100,18 @@ std::map<int, std::vector<float>> centroids;
 // centroids[1] = {7.8, 9.0, 1.1};
 ```
 
-**¿Por qué es peor?**
+**Why is it worse?**
 
-- `std::map` almacena nodos en un árbol rojo-negro: cada centroide está en un nodo del heap separado.
-- Acceso O(log K) por búsqueda frente a O(1) con indexado directo.
-- Imposible enviar por MPI: no hay buffer contiguo.
-- Con K = 4 y cols = 10, la diferencia es pequeña, pero el patrón es necesario para escalar a K = 1000+.
+- `std::map` stores nodes in a red-black tree: each centroid is in a separate heap node.
+- O(log K) access per lookup versus O(1) with direct indexing.
+- Cannot send via MPI: no contiguous buffer.
+- With K = 4 and cols = 10, the difference is small, but the pattern is necessary to scale to K = 1000+.
 
 ---
 
-### 1.3. `Column_stats` — Struct plano
+### 1.3. `Column_stats` — Flat Struct
 
-#### Nuestra implementación
+#### Our Implementation
 
 ```cpp
 struct Column_stats {
@@ -122,7 +122,7 @@ struct Column_stats {
 };
 ```
 
-#### Alternativa: `std::unordered_map<std::string, float>`
+#### Alternative: `std::unordered_map<std::string, float>`
 
 ```cpp
 std::unordered_map<std::string, float> stats;
@@ -130,19 +130,19 @@ stats["min"] = ...;
 stats["max"] = ...;
 ```
 
-**¿Por qué es peor?**
+**Why is it worse?**
 
-- Hash map con strings: cada lookup requiere hash + comparación de cadena.
-- ~100× más lento que acceder a un campo de struct directamente (1 instrucción vs. hash + posible colisión).
-- Overhead de memoria masivo: cada string tiene allocación dinámica propia.
+- Hash map with strings: each lookup requires hash + string comparison.
+- ~100× slower than accessing a struct field directly (1 instruction vs. hash + potential collision).
+- Massive memory overhead: each string has its own dynamic allocation.
 
 ---
 
 ## 2. I/O (`io_utils.cpp`)
 
-### 2.1. Lectura binaria directa
+### 2.1. Direct Binary Reading
 
-#### Nuestra implementación
+#### Our Implementation
 
 ```cpp
 std::optional<Dataset> ReadBinaryFile(const std::filesystem::path &filepath) {
@@ -159,7 +159,7 @@ std::optional<Dataset> ReadBinaryFile(const std::filesystem::path &filepath) {
 }
 ```
 
-#### Alternativa A: Lectura de CSV línea a línea
+#### Alternative A: Line-by-Line CSV Reading
 
 ```cpp
 Dataset ReadCSV(const std::string &filepath) {
@@ -170,7 +170,7 @@ Dataset ReadCSV(const std::string &filepath) {
     std::stringstream ss(line);
     float val;
     while (ss >> val) {
-      dataset.data.push_back(val);  // ← realloc constante
+      dataset.data.push_back(val);  // ← constant realloc
       if (ss.peek() == ',') ss.ignore();
     }
     dataset.n_rows++;
@@ -179,42 +179,42 @@ Dataset ReadCSV(const std::string &filepath) {
 }
 ```
 
-**¿Por qué es peor?**
+**Why is it worse?**
 
-| Aspecto | Binario | CSV |
+| Aspect | Binary | CSV |
 |---|---|---|
-| Operaciones de lectura | 3 `read()` | N×M `>>` + `getline` |
-| Conversiones | Ninguna | N×M `string → float` |
-| `push_back` con realloc | 0 | Cientos de reallocaciones |
-| Tamaño en disco (10M×10) | ~400 MB | ~900 MB |
-| Tiempo estimado | ~0.5 s | ~5-10 s |
+| Read operations | 3 `read()` | N×M `>>` + `getline` |
+| Conversions | None | N×M `string → float` |
+| `push_back` with realloc | 0 | Hundreds of reallocations |
+| Size on disk (10M×10) | ~400 MB | ~900 MB |
+| Estimated time | ~0.5 s | ~5-10 s |
 
-El punto crítico es el `push_back`: sin conocer el tamaño total de antemano, el vector se reaoja (duplica capacidad) múltiples veces, copiando todos los datos cada vez. Nuestra versión hace `resize(total_elements)` una única vez.
+The critical point is `push_back`: without knowing the total size in advance, the vector reallocates (doubles capacity) multiple times, copying all data each time. Our version calls `resize(total_elements)` a single time.
 
-#### Alternativa B: `mmap` (mapeo de memoria)
+#### Alternative B: `mmap` (memory mapping)
 
 ```cpp
 int fd = open("dataset.bin", O_RDONLY);
 float *data = (float*)mmap(nullptr, size, PROT_READ, MAP_PRIVATE, fd, 0);
 ```
 
-**¿Cuándo sería mejor?** Con datasets mayores que la RAM, `mmap` permite acceso bajo demanda sin cargar todo en memoria. Sin embargo:
+**When would it be better?** With datasets larger than RAM, `mmap` allows on-demand access without loading everything into memory. However:
 
-- **Nuestro caso:** El dataset cabe en RAM y lo necesitamos completamente en un `vector` para MPI. `mmap` añadiría *page faults* bajo demanda y no es compatible con `MPI_Scatterv` (que necesita un buffer contiguo ya residente en memoria).
-- **Conclusión:** Para datasets in-memory como el nuestro, `file.read()` directo es más predecible y rápido.
+- **Our case:** The dataset fits in RAM and we need it entirely in a `vector` for MPI. `mmap` would add on-demand *page faults* and is not compatible with `MPI_Scatterv` (which needs a contiguous buffer already resident in memory).
+- **Conclusion:** For in-memory datasets like ours, direct `file.read()` is more predictable and faster.
 
-### 2.2. `std::optional` para errores
+### 2.2. `std::optional` for Error Handling
 
-#### Nuestra implementación
+#### Our Implementation
 
 ```cpp
 std::optional<Dataset> ReadBinaryFile(...);
-// Uso:
+// Usage:
 auto result = ReadBinaryFile("dataset.bin");
 if (result.has_value()) { /* ok */ }
 ```
 
-#### Alternativa A: Excepciones
+#### Alternative A: Exceptions
 
 ```cpp
 Dataset ReadBinaryFile(...) {
@@ -224,43 +224,43 @@ Dataset ReadBinaryFile(...) {
 }
 ```
 
-**¿Por qué es peor en HPC?**
+**Why is it worse in HPC?**
 
-- Las excepciones C++ tienen coste cero en el *happy path* con compiladores modernos, pero el *unwinding* en caso de error es extremadamente costoso (100-1000 ciclos).
-- Más importante: `-fno-exceptions` es un flag común en HPC para reducir el tamaño del binario. `std::optional` funciona sin excepciones.
-- El compilador genera tablas de limpieza (`.gcc_except_table`) que aumentan el tamaño del binario y pueden afectar la localidad de caché del código.
+- C++ exceptions have zero cost on the *happy path* with modern compilers, but *unwinding* on error is extremely expensive (100-1000 cycles).
+- More importantly: `-fno-exceptions` is a common flag in HPC to reduce binary size. `std::optional` works without exceptions.
+- The compiler generates cleanup tables (`.gcc_except_table`) that increase binary size and can affect code cache locality.
 
-#### Alternativa B: Código de error (estilo C)
+#### Alternative B: Error Code (C-style)
 
 ```cpp
 int ReadBinaryFile(const char *path, Dataset *out_dataset);
-// Uso:
+// Usage:
 Dataset ds;
 if (ReadBinaryFile("data.bin", &ds) != 0) { /* error */ }
 ```
 
-**¿Por qué es peor?**
+**Why is it worse?**
 
-- El parámetro de salida obliga al llamador a declarar la variable antes → no se puede usar con `auto`.
-- No hay claridad semántica: ¿`0` es éxito o error? Depende de la convención.
-- `std::optional` es autoexplicativo y el compilador puede optimizar el Return Value Optimization (RVO) igual que con un retorno directo.
+- The output parameter forces the caller to declare the variable beforehand → cannot use `auto`.
+- No semantic clarity: is `0` success or error? Depends on the convention.
+- `std::optional` is self-explanatory and the compiler can optimize Return Value Optimization (RVO) just as well as a direct return.
 
 ---
 
-## 3. Generador de Datos (`tools/file_generator.cpp`)
+## 3. Data Generator (`tools/file_generator.cpp`)
 
-### 3.1. Mersenne Twister con semilla fija
+### 3.1. Mersenne Twister with Fixed Seed
 
-#### Nuestra implementación
+#### Our Implementation
 
 ```cpp
-std::mt19937 rng(42);  // semilla fija
+std::mt19937 rng(42);  // fixed seed
 std::uniform_real_distribution<float> dist(-100.0f, 100.0f);
 for (uint64_t i = 0; i < total_elements; ++i)
     data[i] = dist(rng);
 ```
 
-#### Alternativa A: `rand()` de C
+#### Alternative A: C's `rand()`
 
 ```cpp
 srand(42);
@@ -268,29 +268,29 @@ for (uint64_t i = 0; i < total_elements; ++i)
     data[i] = -100.0f + (rand() / (float)RAND_MAX) * 200.0f;
 ```
 
-**¿Por qué es peor?**
+**Why is it worse?**
 
-- `rand()` usa un generador lineal congruencial con período corto (2³¹). Con 100M de elementos, los patrones se repiten.
-- `RAND_MAX` es solo 2³¹-1 → solo 2.1 billones de valores posibles entre -100 y 100. Distribución granular.
-- `rand()` no es thread-safe: si paralelizamos la generación, hay condiciones de carrera.
-- `mt19937` tiene período 2¹⁹⁹³⁷-1 y distribución estadísticamente uniforme comprobada.
+- `rand()` uses a linear congruential generator with a short period (2³¹). With 100M elements, patterns repeat.
+- `RAND_MAX` is only 2³¹-1 → only 2.1 billion possible values between -100 and 100. Granular distribution.
+- `rand()` is not thread-safe: if we parallelize the generation, there are race conditions.
+- `mt19937` has a period of 2¹⁹⁹³⁷-1 and a statistically verified uniform distribution.
 
-#### Alternativa B: `/dev/urandom`
+#### Alternative B: `/dev/urandom`
 
 ```cpp
 int fd = open("/dev/urandom", O_RDONLY);
 read(fd, data.data(), total_elements * sizeof(float));
 ```
 
-**¿Por qué es peor?**
+**Why is it worse?**
 
-- No reproducible: cada ejecución genera datos diferentes → imposible comparar benchmarks.
-- Los valores no siguen una distribución uniforme en un rango específico; son bytes aleatorios reinterpretados como float → incluye NaN, infinitos, y denormales.
-- La semilla fija (`42`) garantiza que todos los tests y benchmarks son **determinísticos**.
+- Not reproducible: each run generates different data → impossible to compare benchmarks.
+- Values do not follow a uniform distribution within a specific range; they are random bytes reinterpreted as float → includes NaN, infinities, and denormals.
+- The fixed seed (`42`) guarantees that all tests and benchmarks are **deterministic**.
 
-### 3.2. Escritura binaria en bloque
+### 3.2. Block Binary Writing
 
-#### Nuestra implementación
+#### Our Implementation
 
 ```cpp
 file.write(reinterpret_cast<const char *>(&num_rows), sizeof(uint32_t));
@@ -299,7 +299,7 @@ file.write(reinterpret_cast<const char *>(data.data()),
            total_elements * sizeof(float));
 ```
 
-#### Alternativa: Escritura de CSV punto por punto
+#### Alternative: Point-by-Point CSV Writing
 
 ```cpp
 for (uint32_t r = 0; r < num_rows; r++) {
@@ -311,19 +311,19 @@ for (uint32_t r = 0; r < num_rows; r++) {
 }
 ```
 
-**¿Por qué es peor?**
+**Why is it worse?**
 
-- N×M operaciones de `operator<<` con conversión `float → string` (cada una requiere `sprintf` internamente).
-- El stream de C++ flushea el buffer interno frecuentemente con tantas escrituras pequeñas.
-- Nuestro `file.write()` envía un solo bloque contiguo al kernel en una única syscall.
+- N×M `operator<<` operations with `float → string` conversion (each one internally requires `sprintf`).
+- The C++ stream flushes its internal buffer frequently with so many small writes.
+- Our `file.write()` sends a single contiguous block to the kernel in a single syscall.
 
 ---
 
-## 4. Distribución Inicial de Datos (`main.cpp`)
+## 4. Initial Data Distribution (`main.cpp`)
 
-### 4.1. `MPI_Bcast` para dimensiones
+### 4.1. `MPI_Bcast` for Dimensions
 
-#### Nuestra implementación
+#### Our Implementation
 
 ```cpp
 uint32_t dimensions[2] = {0, 0};
@@ -334,7 +334,7 @@ if (rank == 0) {
 MPI_Bcast(dimensions, 2, MPI_UINT32_T, 0, MPI_COMM_WORLD);
 ```
 
-#### Alternativa: `MPI_Send` en bucle desde Rank 0
+#### Alternative: `MPI_Send` Loop from Rank 0
 
 ```cpp
 if (rank == 0) {
@@ -345,15 +345,15 @@ if (rank == 0) {
 }
 ```
 
-**¿Por qué es peor?**
+**Why is it worse?**
 
-- **P-1 mensajes secuenciales** desde Rank 0: latencia total = (P-1) × latencia_red.
-- `MPI_Bcast` usa un **árbol binomial**: Rank 0 envía a 1, luego 0→2 y 1→3 simultáneamente, etc. Latencia = O(log P).
-- Con P = 64 procesos: Send en bucle = 63 pasos. Bcast = 6 pasos. **10× más rápido**.
+- **P-1 sequential messages** from Rank 0: total latency = (P-1) × network_latency.
+- `MPI_Bcast` uses a **binomial tree**: Rank 0 sends to 1, then 0→2 and 1→3 simultaneously, etc. Latency = O(log P).
+- With P = 64 processes: Loop Send = 63 steps. Bcast = 6 steps. **10× faster**.
 
-### 4.2. `MPI_Scatterv` con balance por remainder
+### 4.2. `MPI_Scatterv` with Remainder Balancing
 
-#### Nuestra implementación
+#### Our Implementation
 
 ```cpp
 int local_rows = total_rows / num_procs;
@@ -370,22 +370,22 @@ for (int i = 0; i < num_procs; ++i) {
 MPI_Scatterv(global_dataset.data.data(), sendcounts.data(), ...);
 ```
 
-#### Alternativa A: `MPI_Scatter` con truncamiento
+#### Alternative A: `MPI_Scatter` with Truncation
 
 ```cpp
-int rows_per_proc = total_rows / num_procs;  // descarta el resto
+int rows_per_proc = total_rows / num_procs;  // discards the remainder
 MPI_Scatter(data, rows_per_proc * num_cols, MPI_FLOAT, ...);
 ```
 
-**¿Por qué es peor?**
+**Why is it worse?**
 
-- Si `total_rows = 1003` y `num_procs = 4`, cada proceso recibe 250 filas → **se pierden 3 filas**.
-- En un dataset real, perder datos es inaceptable. Además, el desbalance crece con más procesos.
+- If `total_rows = 1003` and `num_procs = 4`, each process receives 250 rows → **3 rows are lost**.
+- In a real dataset, losing data is unacceptable. Furthermore, the imbalance grows with more processes.
 
-#### Alternativa B: Padding con filas vacías
+#### Alternative B: Padding with Empty Rows
 
 ```cpp
-// Rellenar hasta que total_rows sea divisible por num_procs
+// Pad until total_rows is divisible by num_procs
 while (total_rows % num_procs != 0) {
     global_dataset.data.insert(global_dataset.data.end(), num_cols, 0.0f);
     total_rows++;
@@ -393,15 +393,15 @@ while (total_rows % num_procs != 0) {
 MPI_Scatter(...);
 ```
 
-**¿Por qué es peor?**
+**Why is it worse?**
 
-- Las filas de relleno (ceros) **corrompen las estadísticas**: el mínimo siempre será 0, la media se desplaza.
-- Las filas de relleno **afectan K-Medias**: los centroides se sesgan hacia el origen (0,0,...,0).
-- `MPI_Scatterv` evita ambos problemas distribuyendo exactamente los datos reales.
+- The padding rows (zeros) **corrupt statistics**: the minimum will always be 0, the mean shifts.
+- The padding rows **affect K-Means**: centroids become biased toward the origin (0,0,...,0).
+- `MPI_Scatterv` avoids both problems by distributing exactly the real data.
 
-### 4.3. Cálculo de `global_offset`
+### 4.3. Computing `global_offset`
 
-#### Nuestra implementación
+#### Our Implementation
 
 ```cpp
 uint64_t global_offset = 0;
@@ -409,22 +409,22 @@ for (int i = 0; i < rank; ++i)
     global_offset += (total_rows / num_procs) + (i < remainder ? 1 : 0);
 ```
 
-#### Alternativa: Fórmula cerrada
+#### Alternative: Closed-Form Formula
 
 ```cpp
 uint64_t global_offset = rank * (total_rows / num_procs)
                        + std::min(rank, remainder);
 ```
 
-**¿Es mejor la fórmula cerrada?** Técnicamente sí — O(1) vs O(P). Pero con P < 1000 procesos, la diferencia es de nanosegundos frente a una operación que ocurre una sola vez. La versión con bucle es más legible y menos propensa a errores de desbordamiento con enteros grandes.
+**Is the closed-form formula better?** Technically yes — O(1) vs O(P). But with P < 1000 processes, the difference is nanoseconds for an operation that occurs only once. The loop version is more readable and less prone to overflow errors with large integers.
 
 ---
 
-## 5. Estadísticas (`stats.cpp`)
+## 5. Statistics (`stats.cpp`)
 
-### 5.1. Reducción OpenMP con arrays
+### 5.1. OpenMP Reduction with Arrays
 
-#### Nuestra implementación
+#### Our Implementation
 
 ```cpp
 double *sum_ptr = local_sum.data();
@@ -445,7 +445,7 @@ for (uint32_t r = 0; r < num_rows; ++r) {
 }
 ```
 
-#### Alternativa A: `#pragma omp critical` en cada iteración
+#### Alternative A: `#pragma omp critical` on Every Iteration
 
 ```cpp
 #pragma omp parallel for
@@ -462,13 +462,13 @@ for (uint32_t r = 0; r < num_rows; ++r) {
 }
 ```
 
-**¿Por qué es peor?**
+**Why is it worse?**
 
-- `critical` serializa completamente el bloque: solo un hilo lo ejecuta a la vez.
-- Con 8 hilos, 7 están siempre esperando → **peor que secuencial** por el overhead del lock.
-- Rendimiento: `T_critical ≈ T_secuencial × (1 + overhead_lock)` → más lento que sin OpenMP.
+- `critical` completely serializes the block: only one thread executes it at a time.
+- With 8 threads, 7 are always waiting → **worse than sequential** due to lock overhead.
+- Performance: `T_critical ≈ T_sequential × (1 + lock_overhead)` → slower than without OpenMP.
 
-#### Alternativa B: `#pragma omp atomic` por cada variable
+#### Alternative B: `#pragma omp atomic` for Each Variable
 
 ```cpp
 #pragma omp parallel for
@@ -477,18 +477,18 @@ for (uint32_t r = 0; r < num_rows; ++r) {
     for (uint32_t c = 0; c < num_cols; ++c) {
         #pragma omp atomic
         sum[c] += row_ptr[c];
-        // atomic NO soporta min/max → no aplicable
+        // atomic does NOT support min/max → not applicable
     }
 }
 ```
 
-**¿Por qué es peor?**
+**Why is it worse?**
 
-- `atomic` no soporta operaciones `min`/`max` → necesitaríamos un `critical` de todas formas.
-- Incluso para la suma: N×M operaciones atómicas, cada una con barrera de memoria (5-20 ciclos extra).
-- *Cache line bouncing*: múltiples cores intentan escribir en `sum[0]` simultáneamente → la línea de caché rebota entre caches L1 de diferentes cores.
+- `atomic` does not support `min`/`max` operations → we would need a `critical` section anyway.
+- Even for the sum: N×M atomic operations, each with a memory barrier (5-20 extra cycles).
+- *Cache line bouncing*: multiple cores try to write to `sum[0]` simultaneously → the cache line bounces between L1 caches of different cores.
 
-#### Alternativa C: Buffers manuales privados (como en kmeans.cpp)
+#### Alternative C: Manual Private Buffers (as in kmeans.cpp)
 
 ```cpp
 #pragma omp parallel
@@ -497,7 +497,7 @@ for (uint32_t r = 0; r < num_rows; ++r) {
     std::vector<float> my_min(num_cols, FLT_MAX);
 
     #pragma omp for nowait
-    for (uint32_t r = 0; r < num_rows; ++r) { /* acumular en my_sum, my_min */ }
+    for (uint32_t r = 0; r < num_rows; ++r) { /* accumulate in my_sum, my_min */ }
 
     #pragma omp critical
     {
@@ -509,47 +509,47 @@ for (uint32_t r = 0; r < num_rows; ++r) {
 }
 ```
 
-**¿Es peor?** Es funcional y tiene buen rendimiento, pero:
+**Is it worse?** It is functional and performs well, but:
 
-- Requiere escribir y mantener manualmente los buffers de merge.
-- La sección `critical` al final es O(T) — se serializa hilo por hilo.
-- La reducción nativa OpenMP fusiona en O(log T) pasos usando un árbol binario interno.
-- Con T = 16 hilos: critical = 16 pasos de merge, reducción nativa = 4 pasos. **4× más rápido en el merge**.
+- Requires manually writing and maintaining the merge buffers.
+- The `critical` section at the end is O(T) — it serializes thread by thread.
+- The native OpenMP reduction merges in O(log T) steps using an internal binary tree.
+- With T = 16 threads: critical = 16 merge steps, native reduction = 4 steps. **4× faster merge**.
 
-### 5.2. Acumuladores `double` para sumas de `float`
+### 5.2. `double` Accumulators for `float` Sums
 
-#### Nuestra implementación
+#### Our Implementation
 
 ```cpp
 std::vector<double> local_sum(num_cols, 0.0);      // double
 std::vector<double> local_sum_sq(num_cols, 0.0);    // double
-sum_ptr[c] += val;                                   // float → double implícito
+sum_ptr[c] += val;                                   // float → double implicit
 sum_sq_ptr[c] += static_cast<double>(val) * val;     // double × float
 ```
 
-#### Alternativa: Todo en `float`
+#### Alternative: Everything in `float`
 
 ```cpp
 std::vector<float> local_sum(num_cols, 0.0f);
 local_sum[c] += val;  // float + float
 ```
 
-**¿Por qué es peor numéricamente?**
+**Why is it worse numerically?**
 
-`float` tiene ~7 dígitos de precisión. Al sumar 10 millones de valores:
+`float` has ~7 digits of precision. When summing 10 million values:
 
 ```
-Ejemplo: sumar 10,000,000 valores de ~50.0
-Suma real:    500,000,000.0
-Suma float:   499,999,872.0   ← error de 128 por pérdida de precisión
-Suma double:  500,000,000.0   ← exacto hasta 15 dígitos
+Example: sum 10,000,000 values of ~50.0
+Real sum:     500,000,000.0
+Float sum:    499,999,872.0   ← error of 128 due to precision loss
+Double sum:   500,000,000.0   ← exact up to 15 digits
 ```
 
-La **cancelación catastrófica** es aún peor para la varianza: `Var = E[X²] - (E[X])²` resta dos números grandes para obtener uno pequeño. Con `float`, el resultado puede ser **negativo** (imposible matemáticamente), por eso incluimos el clamp a cero.
+**Catastrophic cancellation** is even worse for variance: `Var = E[X²] - (E[X])²` subtracts two large numbers to obtain a small one. With `float`, the result can be **negative** (mathematically impossible), which is why we include the clamp to zero.
 
-### 5.3. Varianza con fórmula computacional
+### 5.3. Variance with Computational Formula
 
-#### Nuestra implementación
+#### Our Implementation
 
 ```cpp
 double mean = global_sum[c] / (double)global_rows;
@@ -558,31 +558,31 @@ double variance = mean_of_squares - (mean * mean);  // E[X²] - (E[X])²
 if (variance < 0.0) variance = 0.0;                  // clamp
 ```
 
-#### Alternativa: Fórmula de dos pasadas
+#### Alternative: Two-Pass Formula
 
 ```cpp
-// Pasada 1: calcular media
+// Pass 1: compute mean
 double mean = 0;
 for (auto x : data) mean += x;
 mean /= N;
 
-// Pasada 2: calcular varianza
+// Pass 2: compute variance
 double var = 0;
 for (auto x : data) var += (x - mean) * (x - mean);
 var /= N;
 ```
 
-**¿Es mejor numéricamente?** Sí, la fórmula de dos pasadas es más estable numéricamente. **¿Es peor en rendimiento?** Mucho peor en nuestro contexto distribuido:
+**Is it better numerically?** Yes, the two-pass formula is more numerically stable. **Is it worse in performance?** Much worse in our distributed context:
 
-- Requiere **dos pasadas completas** sobre los datos → doble ancho de banda de memoria.
-- En MPI, la primera pasada necesita un `MPI_Allreduce` para obtener la media global **antes** de la segunda pasada → dos rondas de comunicación.
-- Nuestra fórmula de una pasada calcula `sum` y `sum_sq` simultáneamente en el mismo bucle → **1 pasada, 1 Allreduce**.
+- Requires **two complete passes** over the data → double memory bandwidth.
+- In MPI, the first pass needs an `MPI_Allreduce` to obtain the global mean **before** the second pass → two rounds of communication.
+- Our one-pass formula computes `sum` and `sum_sq` simultaneously in the same loop → **1 pass, 1 Allreduce**.
 
-El clamp `if (variance < 0) variance = 0` compensa la menor estabilidad con coste cero.
+The clamp `if (variance < 0) variance = 0` compensates for the lower stability at zero cost.
 
-### 5.4. `MPI_Allreduce` para combinar estadísticas
+### 5.4. `MPI_Allreduce` to Combine Statistics
 
-#### Nuestra implementación
+#### Our Implementation
 
 ```cpp
 MPI_Allreduce(local_sum.data(), global_sum.data(), num_cols,
@@ -591,7 +591,7 @@ MPI_Allreduce(local_min.data(), global_min.data(), num_cols,
               MPI_FLOAT, MPI_MIN, comm);
 ```
 
-#### Alternativa A: `MPI_Reduce` a Rank 0 + `MPI_Bcast`
+#### Alternative A: `MPI_Reduce` to Rank 0 + `MPI_Bcast`
 
 ```cpp
 MPI_Reduce(local_sum.data(), global_sum.data(), num_cols,
@@ -599,16 +599,16 @@ MPI_Reduce(local_sum.data(), global_sum.data(), num_cols,
 MPI_Bcast(global_sum.data(), num_cols, MPI_DOUBLE, 0, comm);
 ```
 
-**¿Por qué es peor?**
+**Why is it worse?**
 
-- 2 operaciones colectivas = 2 × O(log P) de latencia.
-- `MPI_Allreduce` fusiona ambas fases internamente con algoritmos como *recursive doubling* o *ring allreduce*.
-- Las implementaciones de MPI (como OpenMPI) detectan el tamaño del mensaje y eligen automáticamente el algoritmo más eficiente para `Allreduce`.
+- 2 collective operations = 2 × O(log P) latency.
+- `MPI_Allreduce` fuses both phases internally with algorithms like *recursive doubling* or *ring allreduce*.
+- MPI implementations (like OpenMPI) detect the message size and automatically choose the most efficient algorithm for `Allreduce`.
 
-#### Alternativa B: Reducción manual con `MPI_Send/Recv` en árbol
+#### Alternative B: Manual Reduction with `MPI_Send/Recv` in a Tree
 
 ```cpp
-// Implementar un árbol binario manualmente...
+// Manually implement a binary tree...
 int partner = rank ^ (1 << step);
 if (rank < partner) {
     MPI_Recv(buffer, ...);
@@ -618,19 +618,19 @@ if (rank < partner) {
 }
 ```
 
-**¿Por qué es peor?**
+**Why is it worse?**
 
-- Reimplementar el árbol de reducción es propenso a errores (potencias de 2, ranks impares, etc.).
-- `MPI_Allreduce` ha sido optimizado durante décadas con algoritmos adaptativos que eligen la estrategia según el tamaño del mensaje, el número de procesos, y la topología de red.
-- Mantener código manual de comunicación es una pesadilla de depuración.
+- Reimplementing the reduction tree is error-prone (powers of 2, odd ranks, etc.).
+- `MPI_Allreduce` has been optimized for decades with adaptive algorithms that choose the strategy based on message size, number of processes, and network topology.
+- Maintaining manual communication code is a debugging nightmare.
 
 ---
 
-## 6. K-Medias — Inicialización (`kmeans.cpp: InitializeCentroids`)
+## 6. K-Means — Initialization (`kmeans.cpp: InitializeCentroids`)
 
-### 6.1. Particionado uniforme por índice global
+### 6.1. Uniform Partitioning by Global Index
 
-#### Nuestra implementación
+#### Our Implementation
 
 ```cpp
 uint64_t rows_per_cluster = total_rows / num_clusters;
@@ -639,21 +639,21 @@ uint32_t cluster_id = std::min(
     num_clusters - 1);
 ```
 
-#### Alternativa A: K-Means++ (selección probabilística)
+#### Alternative A: K-Means++ (Probabilistic Selection)
 
 ```cpp
-// Elegir primer centroide aleatorio
-// Para cada punto, calcular distancia al centroide más cercano
-// Elegir siguiente centroide con probabilidad proporcional a distancia²
+// Choose first centroid randomly
+// For each point, compute distance to the nearest centroid
+// Choose next centroid with probability proportional to distance²
 ```
 
-**¿Es mejor K-Means++?** Produce centroides iniciales más representativos (converge en menos iteraciones). **¿Por qué no lo usamos?**
+**Is K-Means++ better?** It produces more representative initial centroids (converges in fewer iterations). **Why don't we use it?**
 
-- K-Means++ es **inherentemente secuencial**: cada centroide depende de los anteriores.
-- En un entorno MPI, cada paso requiere un `MPI_Allreduce` para el centroide elegido + `MPI_Bcast` → K rondas de comunicación.
-- El particionado uniforme es O(1) por punto, completamente paralelo, y no requiere comunicación para la asignación (solo para las sumas finales).
+- K-Means++ is **inherently sequential**: each centroid depends on the previous ones.
+- In an MPI environment, each step requires an `MPI_Allreduce` for the chosen centroid + `MPI_Bcast` → K rounds of communication.
+- Uniform partitioning is O(1) per point, fully parallel, and requires no communication for assignment (only for the final sums).
 
-#### Alternativa B: Centroides aleatorios
+#### Alternative B: Random Centroids
 
 ```cpp
 std::mt19937 rng(42);
@@ -662,15 +662,15 @@ for (int k = 0; k < num_clusters; k++)
         centroids[k][c] = dist(rng);
 ```
 
-**¿Por qué es peor?**
+**Why is it worse?**
 
-- Los centroides aleatorios pueden estar muy lejos de cualquier dato real → primeras iteraciones desperdiciadas.
-- Riesgo de clústeres vacíos: si un centroide se coloca donde no hay datos, permanece vacío indefinidamente.
-- El particionado uniforme garantiza que **cada centroide empieza como la media de datos reales** → convergencia más rápida.
+- Random centroids can be very far from any real data → first iterations wasted.
+- Risk of empty clusters: if a centroid is placed where there is no data, it remains empty indefinitely.
+- Uniform partitioning guarantees that **each centroid starts as the mean of real data** → faster convergence.
 
-### 6.2. Buffers privados por hilo con merge `critical`
+### 6.2. Per-Thread Private Buffers with `critical` Merge
 
-#### Nuestra implementación
+#### Our Implementation
 
 ```cpp
 #pragma omp parallel
@@ -697,7 +697,7 @@ for (int k = 0; k < num_clusters; k++)
 }
 ```
 
-#### Alternativa: `atomic` en cada acumulación
+#### Alternative: `atomic` on Every Accumulation
 
 ```cpp
 #pragma omp parallel for
@@ -712,24 +712,24 @@ for (uint32_t r = 0; r < num_rows; ++r) {
 }
 ```
 
-**¿Por qué es peor?**
+**Why is it worse?**
 
-Por cada fila se ejecutan **1 + num_cols** operaciones atómicas. Con 10M filas y 10 columnas:
-- Total de atomics: 10M × 11 = **110 millones de operaciones atómicas**.
-- Cada atomic: barrera de memoria + posible invalidación de caché = 5-20 ciclos.
-- Coste estimado: 110M × 10 ciclos = **1.1 segundo** (a 1 GHz) solo en sincronización.
+For each row, **1 + num_cols** atomic operations are executed. With 10M rows and 10 columns:
+- Total atomics: 10M × 11 = **110 million atomic operations**.
+- Each atomic: memory barrier + possible cache invalidation = 5-20 cycles.
+- Estimated cost: 110M × 10 cycles = **1.1 seconds** (at 1 GHz) in synchronization alone.
 
-Con buffers privados:
-- 0 operaciones atómicas durante el bucle.
-- En el merge: T hilos × K clusters × cols = 8 × 4 × 10 = **320 sumas** → despreciable.
+With private buffers:
+- 0 atomic operations during the loop.
+- In the merge: T threads × K clusters × cols = 8 × 4 × 10 = **320 additions** → negligible.
 
 ---
 
-## 7. K-Medias — Bucle Principal (`kmeans.cpp: RunKMeans`)
+## 7. K-Means — Main Loop (`kmeans.cpp: RunKMeans`)
 
-### 7.1. Asignación: distancia euclidiana cuadrática
+### 7.1. Assignment: Squared Euclidean Distance
 
-#### Nuestra implementación
+#### Our Implementation
 
 ```cpp
 float dist_sq = 0.0f;
@@ -740,7 +740,7 @@ for (uint32_t c = 0; c < num_cols; ++c) {
 if (dist_sq < min_dist_sq) { best_cluster = k; ... }
 ```
 
-#### Alternativa A: Distancia euclidiana con `sqrt`
+#### Alternative A: Euclidean Distance with `sqrt`
 
 ```cpp
 float dist = 0.0f;
@@ -748,16 +748,16 @@ for (uint32_t c = 0; c < num_cols; ++c) {
     float diff = row_ptr[c] - centroid_ptr[c];
     dist += diff * diff;
 }
-dist = std::sqrt(dist);  // ← innecesario
+dist = std::sqrt(dist);  // ← unnecessary
 ```
 
-**¿Por qué es peor?**
+**Why is it worse?**
 
-- `sqrt` es una de las operaciones más costosas del procesador (~15-20 ciclos frente a 1 ciclo de multiplicación).
-- Como solo comparamos distancias (`dist < min_dist`), y `sqrt` es una función monótona, `dist² < min_dist²` produce el mismo resultado sin la raíz cuadrada.
-- Con 10M filas × K = 4 centroides: **40 millones de `sqrt` eliminados**.
+- `sqrt` is one of the most expensive processor operations (~15-20 cycles versus 1 cycle for multiplication).
+- Since we only compare distances (`dist < min_dist`), and `sqrt` is a monotonic function, `dist² < min_dist²` produces the same result without the square root.
+- With 10M rows × K = 4 centroids: **40 million `sqrt` calls eliminated**.
 
-#### Alternativa B: Distancia Manhattan
+#### Alternative B: Manhattan Distance
 
 ```cpp
 float dist = 0.0f;
@@ -765,11 +765,11 @@ for (uint32_t c = 0; c < num_cols; ++c)
     dist += std::abs(row_ptr[c] - centroid_ptr[c]);
 ```
 
-**¿Es más rápida?** Sí (`abs` es más barato que `x*x`). **¿Es correcta?** No para K-Medias estándar. K-Medias minimiza la varianza intra-clúster, que está definida con distancia L2 (euclidiana). Usar Manhattan (L1) converge hacia *medianas* en lugar de *medias*, lo que es un algoritmo diferente (K-Medians).
+**Is it faster?** Yes (`abs` is cheaper than `x*x`). **Is it correct?** Not for standard K-Means. K-Means minimizes intra-cluster variance, which is defined with L2 distance (Euclidean). Using Manhattan (L1) converges toward *medians* instead of *means*, which is a different algorithm (K-Medians).
 
-### 7.2. Convergencia: umbral del 5%
+### 7.2. Convergence: 5% Threshold
 
-#### Nuestra implementación
+#### Our Implementation
 
 ```cpp
 uint64_t global_displacement = 0;
@@ -780,19 +780,19 @@ double displacement_ratio = (double)global_displacement / (double)total_rows;
 if (displacement_ratio < 0.05) { converged = true; break; }
 ```
 
-#### Alternativa A: Convergencia exacta (0 cambios)
+#### Alternative A: Exact Convergence (0 changes)
 
 ```cpp
 if (global_displacement == 0) { converged = true; break; }
 ```
 
-**¿Por qué es peor?**
+**Why is it worse?**
 
-- K-Medias puede oscilar con 2-3 puntos fronterizos que cambian de clúster en cada iteración indefinidamente.
-- Cada iteración extra implica un `MPI_Alltoallv` completo (redistribución masiva de datos).
-- El umbral del 5% detiene el algoritmo **cuando el 95% de los puntos ya están estables**, ahorrando potencialmente decenas de iteraciones costosas.
+- K-Means can oscillate with 2-3 boundary points that switch clusters every iteration indefinitely.
+- Each extra iteration involves a full `MPI_Alltoallv` (massive data redistribution).
+- The 5% threshold stops the algorithm **when 95% of points are already stable**, potentially saving dozens of expensive iterations.
 
-#### Alternativa B: Convergencia por cambio de centroides
+#### Alternative B: Convergence by Centroid Shift
 
 ```cpp
 double centroid_shift = 0;
@@ -802,35 +802,35 @@ for (int k = 0; k < K; k++)
 if (centroid_shift < epsilon) break;
 ```
 
-**¿Es mejor?** Es más finamente sintonizable, pero requiere almacenar los centroides anteriores y calcular la diferencia. El ratio de desplazamiento es más intuitivo ("% de puntos que cambiaron") y no requiere memoria adicional.
+**Is it better?** It is more finely tunable, but requires storing the previous centroids and computing the difference. The displacement ratio is more intuitive ("% of points that changed") and requires no additional memory.
 
-### 7.3. Redistribución de datos con `MPI_Alltoallv`
+### 7.3. Data Redistribution with `MPI_Alltoallv`
 
-#### Nuestra implementación
+#### Our Implementation
 
 ```cpp
-// 1. Particionar filas por rank destino
+// 1. Partition rows by destination rank
 for (uint32_t r = 0; r < current_num_rows; ++r) {
     int owner_rank = get_owner_rank(local_assignments[r]);
     if (owner_rank == rank) {
-        next_local_data.insert(...);  // queda aquí
+        next_local_data.insert(...);  // stays here
     } else {
-        send_data_buffers[owner_rank].insert(...);  // enviar
+        send_data_buffers[owner_rank].insert(...);  // send
     }
 }
 
-// 2. Notificar cuántos puntos envía cada rank a cada otro
+// 2. Notify how many points each rank sends to each other
 MPI_Alltoall(send_point_counts, 1, MPI_INT, recv_point_counts, 1, MPI_INT, comm);
 
-// 3. Intercambiar datos
+// 3. Exchange data
 MPI_Alltoallv(flat_send_data, send_data_counts, send_data_displacements, MPI_FLOAT,
               flat_recv_data, recv_data_counts, recv_data_displacements, MPI_FLOAT, comm);
 
-// 4. Merge: datos recibidos + datos locales
+// 4. Merge: received data + local data
 next_local_data.insert(next_local_data.end(), flat_recv_data.begin(), ...);
 ```
 
-#### Alternativa A: `MPI_Isend`/`MPI_Irecv` punto a punto
+#### Alternative A: Point-to-Point `MPI_Isend`/`MPI_Irecv`
 
 ```cpp
 std::vector<MPI_Request> requests;
@@ -849,42 +849,42 @@ for (int src = 0; src < num_procs; src++) {
 MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
 ```
 
-**¿Por qué es peor?**
+**Why is it worse?**
 
-| Aspecto | `MPI_Alltoallv` | `Isend`/`Irecv` manual |
+| Aspect | `MPI_Alltoallv` | Manual `Isend`/`Irecv` |
 |---|---|---|
-| Líneas de código | ~10 | ~30+ |
-| Determinación de recv_counts | `MPI_Alltoall` automático | Hay que intercambiarlos manualmente |
-| Optimización interna | MPI elige algoritmo (pairwise, Bruck, linear) | Solo envío directo |
-| Riesgo de deadlock | Ninguno | Posible si el orden de Send/Recv no es correcto |
-| Integración con hardware | Puede usar RDMA, offload a NIC | Depende de la implementación |
+| Lines of code | ~10 | ~30+ |
+| Determining recv_counts | Automatic `MPI_Alltoall` | Must be exchanged manually |
+| Internal optimization | MPI chooses algorithm (pairwise, Bruck, linear) | Direct send only |
+| Deadlock risk | None | Possible if Send/Recv order is incorrect |
+| Hardware integration | Can use RDMA, NIC offload | Depends on implementation |
 
-#### Alternativa B: No redistribuir (solo broadcast de centroides)
+#### Alternative B: No Redistribution (only centroid broadcast)
 
 ```cpp
-// Sin MPI_Alltoallv: cada rank mantiene sus datos originales
-// Solo compartir centroides actualizados
+// Without MPI_Alltoallv: each rank keeps its original data
+// Only share updated centroids
 MPI_Allreduce(local_sums, global_sums, K * cols, MPI_DOUBLE, MPI_SUM, comm);
 MPI_Allreduce(local_counts, global_counts, K, MPI_UINT32_T, MPI_SUM, comm);
 ```
 
-**¿Es más simple?** Sí. **¿Es peor en rendimiento a largo plazo?** Puede serlo:
+**Is it simpler?** Yes. **Is it worse in long-term performance?** It can be:
 
-- Sin redistribución, cada rank acumula sumas parciales para **todos** los K clústeres, aunque la mayoría de sus puntos pertenezcan a 1-2 clústeres.
-- Con redistribución, cada rank solo tiene puntos de sus clústeres asignados → las acumulaciones son más eficientes y locales.
-- Sin embargo, la redistribución tiene un coste fijo por iteración (`MPI_Alltoallv`). Para K pequeño y pocas iteraciones, la versión sin redistribución puede ser más rápida.
+- Without redistribution, each rank accumulates partial sums for **all** K clusters, even though the majority of its points belong to 1-2 clusters.
+- With redistribution, each rank only has points from its assigned clusters → accumulations are more efficient and local.
+- However, redistribution has a fixed cost per iteration (`MPI_Alltoallv`). For small K and few iterations, the version without redistribution can be faster.
 
-**Nuestra elección:** La redistribución escala mejor con K grande y datasets masivos, que es el caso de uso HPC para el que diseñamos el sistema.
+**Our choice:** Redistribution scales better with large K and massive datasets, which is the HPC use case we designed the system for.
 
-### 7.4. Propiedad de clústeres: `get_owner_rank`
+### 7.4. Cluster Ownership: `get_owner_rank`
 
-#### Nuestra implementación
+#### Our Implementation
 
 ```cpp
 auto get_owner_rank = [&](uint32_t cluster_id) -> int {
     uint32_t base_clusters = num_clusters / num_procs;
     uint32_t remainder = num_clusters % num_procs;
-    // Distribuir clústeres equitativamente: primeros 'remainder' ranks tienen 1 extra
+    // Distribute clusters evenly: first 'remainder' ranks get 1 extra
     int rank_owner = 0;
     uint32_t limit = 0;
     for (int i = 0; i < num_procs; ++i) {
@@ -895,7 +895,7 @@ auto get_owner_rank = [&](uint32_t cluster_id) -> int {
 };
 ```
 
-#### Alternativa A: Round-robin simple
+#### Alternative A: Simple Round-Robin
 
 ```cpp
 int get_owner_rank(uint32_t cluster_id) {
@@ -903,9 +903,9 @@ int get_owner_rank(uint32_t cluster_id) {
 }
 ```
 
-**¿Es mejor?** Más simple, O(1). **¿Es peor?** Puede crear desbalance: si K = 5 y P = 4, Rank 0 tiene clústeres {0, 4} (2 clústeres) y Rank 3 tiene solo clúster {3}. Nuestra versión distribuye 2-1-1-1, que es lo más equitativo posible.
+**Is it better?** Simpler, O(1). **Is it worse?** It can create imbalance: if K = 5 and P = 4, Rank 0 has clusters {0, 4} (2 clusters) and Rank 3 has only cluster {3}. Our version distributes 2-1-1-1, which is as balanced as possible.
 
-#### Alternativa B: Hash
+#### Alternative B: Hash
 
 ```cpp
 int get_owner_rank(uint32_t cluster_id) {
@@ -913,15 +913,15 @@ int get_owner_rank(uint32_t cluster_id) {
 }
 ```
 
-**¿Es peor?** El hash puede producir colisiones y distribución desigual con K pequeño. Además, no es determinístico entre compiladores → resultados no reproducibles.
+**Is it worse?** The hash can produce collisions and uneven distribution with small K. Furthermore, it is not deterministic across compilers → non-reproducible results.
 
 ---
 
-## 8. Configuración del Build (`CMakeLists.txt`)
+## 8. Build Configuration (`CMakeLists.txt`)
 
-### 8.1. C++17 sin extensiones GNU
+### 8.1. C++17 Without GNU Extensions
 
-#### Nuestra implementación
+#### Our Implementation
 
 ```cmake
 set(CMAKE_CXX_STANDARD 17)
@@ -929,21 +929,21 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 ```
 
-#### Alternativa: Flags manuales
+#### Alternative: Manual Flags
 
 ```cmake
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17")
 ```
 
-**¿Por qué es peor?**
+**Why is it worse?**
 
-- Solo funciona con GCC/Clang. MSVC usa `/std:c++17`.
-- `CMAKE_CXX_EXTENSIONS OFF` evita `gnu++17`, que activa extensiones no portables. Con `-std=c++17` manual, CMake podría usar `gnu++17` por defecto.
-- `CMAKE_CXX_STANDARD_REQUIRED ON` falla la configuración si el compilador no soporta C++17, en vez de silenciosamente degradar a C++14.
+- Only works with GCC/Clang. MSVC uses `/std:c++17`.
+- `CMAKE_CXX_EXTENSIONS OFF` prevents `gnu++17`, which enables non-portable extensions. With manual `-std=c++17`, CMake could default to `gnu++17`.
+- `CMAKE_CXX_STANDARD_REQUIRED ON` fails configuration if the compiler does not support C++17, instead of silently degrading to C++14.
 
-### 8.2. Targets modernos para MPI y OpenMP
+### 8.2. Modern Targets for MPI and OpenMP
 
-#### Nuestra implementación
+#### Our Implementation
 
 ```cmake
 find_package(MPI REQUIRED)
@@ -951,7 +951,7 @@ find_package(OpenMP REQUIRED)
 target_link_libraries(${PROJECT_NAME} PRIVATE MPI::MPI_CXX OpenMP::OpenMP_CXX)
 ```
 
-#### Alternativa: Flags manuales
+#### Alternative: Manual Flags
 
 ```cmake
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenmp")
@@ -960,37 +960,37 @@ link_directories(/usr/lib/openmpi/lib)
 target_link_libraries(${PROJECT_NAME} mpi)
 ```
 
-**¿Por qué es peor?**
+**Why is it worse?**
 
-- Paths hardcodeados: solo funciona en una distribución Linux específica.
-- `MPI::MPI_CXX` y `OpenMP::OpenMP_CXX` son *imported targets* que CMake configura automáticamente con los includes, linker flags, y compiler flags correctos para **cualquier** sistema.
-- Con targets modernos, un cambio de compilador (GCC → Intel) o de MPI (OpenMPI → MPICH) no requiere modificar el CMakeLists.txt.
+- Hardcoded paths: only works on a specific Linux distribution.
+- `MPI::MPI_CXX` and `OpenMP::OpenMP_CXX` are *imported targets* that CMake configures automatically with the correct includes, linker flags, and compiler flags for **any** system.
+- With modern targets, a compiler change (GCC → Intel) or MPI change (OpenMPI → MPICH) does not require modifying the CMakeLists.txt.
 
 ---
 
-## 9. Resumen General: Todas las Decisiones
+## 9. General Summary: All Decisions
 
-| Componente | Decisión | Alternativa peor | Por qué es peor |
+| Component | Decision | Worse Alternative | Why It Is Worse |
 |---|---|---|---|
-| `Dataset` | `vector<float>` contiguo | `vector<Point>` AoS | Cache misses, sin SIMD, no MPI-compatible |
-| `Dataset` | `vector<float>` contiguo | `float**` punteros | Fragmentación, memory leaks |
-| `Centroids` | `vector<float>` plano | `map<int, vector>` | O(log K) acceso, no contiguo |
-| `Column_stats` | Struct plano | `unordered_map<string>` | 100× más lento por lookup |
-| I/O | Binario directo | CSV línea a línea | 10-20× más lento, parseo costoso |
-| I/O | `std::optional` | Excepciones | Coste de unwinding, incompatible con `-fno-exceptions` |
-| Generador | `mt19937` fija | `rand()` | Periodo corto, no thread-safe, mala distribución |
-| Broadcast | `MPI_Bcast` | `MPI_Send` en bucle | O(log P) vs O(P) |
-| Distribución | `MPI_Scatterv` | `MPI_Scatter` truncando | Pierde datos, desbalanceo |
-| Stats OpenMP | Reducción nativa array | `critical` cada fila | Serializa todo: peor que secuencial |
-| Stats OpenMP | Reducción nativa array | `atomic` cada variable | No soporta min/max, cache bouncing |
-| Stats | Fórmula 1 pasada | 2 pasadas | Doble ancho banda + 2 Allreduce vs 1 |
-| Stats MPI | `MPI_Allreduce` | `Reduce` + `Bcast` | 2 colectivas vs 1 fusionada |
-| K-Means init | Partición uniforme | K-Means++ | Inherentemente secuencial en MPI |
-| K-Means init | Partición uniforme | Aleatorio | Centroides lejos de datos reales |
-| K-Means acum. | Buffers privados + critical | `atomic` cada suma | 110M atomics vs ~300 sumas |
-| K-Means dist. | dist² sin sqrt | dist con sqrt | 40M sqrt eliminados |
-| K-Means conv. | Umbral 5% | Convergencia exacta | Oscilación infinita posible |
-| Redistribución | `MPI_Alltoallv` | `Isend`/`Irecv` | Más código, sin opt. interna, riesgo deadlock |
-| Owner rank | Balance equitativo | Round-robin | Desbalanceo con K % P ≠ 0 |
-| Build | Targets CMake modernos | Flags manuales | No portable, paths hardcodeados |
-| Build | `-O3 -march=native` | Default (`-O0`) | 5-15× sin vectorización SIMD |
+| `Dataset` | Contiguous `vector<float>` | `vector<Point>` AoS | Cache misses, no SIMD, not MPI-compatible |
+| `Dataset` | Contiguous `vector<float>` | `float**` pointers | Fragmentation, memory leaks |
+| `Centroids` | Flat `vector<float>` | `map<int, vector>` | O(log K) access, not contiguous |
+| `Column_stats` | Flat struct | `unordered_map<string>` | 100× slower per lookup |
+| I/O | Direct binary | Line-by-line CSV | 10-20× slower, costly parsing |
+| I/O | `std::optional` | Exceptions | Unwinding cost, incompatible with `-fno-exceptions` |
+| Generator | Fixed `mt19937` | `rand()` | Short period, not thread-safe, poor distribution |
+| Broadcast | `MPI_Bcast` | `MPI_Send` loop | O(log P) vs O(P) |
+| Distribution | `MPI_Scatterv` | `MPI_Scatter` truncating | Loses data, imbalance |
+| Stats OpenMP | Native array reduction | `critical` every row | Serializes everything: worse than sequential |
+| Stats OpenMP | Native array reduction | `atomic` every variable | Does not support min/max, cache bouncing |
+| Stats | One-pass formula | Two passes | Double bandwidth + 2 Allreduce vs 1 |
+| Stats MPI | `MPI_Allreduce` | `Reduce` + `Bcast` | 2 collectives vs 1 fused |
+| K-Means init | Uniform partition | K-Means++ | Inherently sequential in MPI |
+| K-Means init | Uniform partition | Random | Centroids far from real data |
+| K-Means accum. | Private buffers + critical | `atomic` every sum | 110M atomics vs ~300 additions |
+| K-Means dist. | dist² without sqrt | dist with sqrt | 40M sqrt calls eliminated |
+| K-Means conv. | 5% threshold | Exact convergence | Possible infinite oscillation |
+| Redistribution | `MPI_Alltoallv` | `Isend`/`Irecv` | More code, no internal opt., deadlock risk |
+| Owner rank | Balanced distribution | Round-robin | Imbalance when K % P ≠ 0 |
+| Build | Modern CMake targets | Manual flags | Not portable, hardcoded paths |
+| Build | `-O3 -march=native` | Default (`-O0`) | 5-15× without SIMD vectorization |
