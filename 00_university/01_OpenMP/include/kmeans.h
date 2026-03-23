@@ -49,7 +49,7 @@ Centroids InitializeCentroids(const Dataset &local_data, uint32_t num_clusters,
  *      assigned rows (same OpenMP + MPI_Allreduce pattern used in
  *      InitializeCentroids).
  *
- * @param local_data      The dataset partition owned by the calling MPI rank.
+ * @param local_data       The dataset partition owned by the calling MPI rank.
  *                         Modified in place: after return it contains only the
  *                         rows that belong to the clusters assigned to this
  *                         rank.
