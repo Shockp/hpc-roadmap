@@ -1,4 +1,4 @@
-# CAP Práctica 1 — MPI + OpenMP K-Means Pipeline
+# MPI + OpenMP K-Means Pipeline
 
 A high-performance C++17 pipeline that distributes a binary dataset across MPI ranks, computes column-level statistics, and runs K-Means clustering — all accelerated with OpenMP thread-level parallelism.
 
