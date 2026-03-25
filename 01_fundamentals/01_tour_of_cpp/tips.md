@@ -386,3 +386,18 @@
 - **Function objects:** Use predicates and other function objects to give standard algorithms a wider range of meanings.
 - **Predicates:** A predicate must not modify its argument.
 - **Standard algorithms:** Know your standard-library algorithms and prefer them to hand-crafted loops.
+
+## 14. Ranges
+
+### General
+- **Range algorithms:** When the pair-of-iterators style becomes tedious, use a range algorithm.
+- **Explicit names:** When using a range algorithm, remember to explicitly introduce its name.
+- **Pipelines:** Pipelines of operations on a range can be expressed using views, generators, and filters.
+- **Sentinels:** To end a range with a predicate, you need to define a sentinel.
+- **Static assertions:** Using `static_assert`, we can check that a specific type meets the requirements of a concept.
+- **Custom algorithms:** If you want a range algorithm and there isn't one in the standard, just write your own.
+
+### Best Practices
+- **Regular types:** The ideal for types is regular.
+- **Standard concepts:** Prefer standard-library concepts where they apply.
+- **Parallel execution:** When requesting parallel execution, be sure to avoid data races and deadlock.
