@@ -4,7 +4,7 @@
 namespace memorymanager {
 
 class Matrix {
-public:
+ public:
   Matrix();
   Matrix(int rows, int cols);
 
@@ -26,12 +26,12 @@ public:
   int rows() const { return rows_; }
   int cols() const { return cols_; }
 
-private:
+ private:
   int rows_;
   int cols_;
   double *data_;
 };
 
-} // namespace memorymanager
+}  // namespace memorymanager
 
 #endif

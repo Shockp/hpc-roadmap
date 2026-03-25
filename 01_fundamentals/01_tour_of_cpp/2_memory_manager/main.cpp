@@ -1,7 +1,7 @@
-#include "matrix.h"
-
 #include <iostream>
 #include <utility>
+
+#include "matrix.h"
 
 memorymanager::Matrix CreateRandomMatrix(int rows, int cols) {
   memorymanager::Matrix temp(rows, cols);

@@ -4,11 +4,11 @@
 namespace physics {
 
 struct Particle {
-  double x, y;   // Position
-  double vx, vy; // Velocity
+  double x, y;    // Position
+  double vx, vy;  // Velocity
   double mass;
 };
 
-} // namespace physics
+}  // namespace physics
 
 #endif

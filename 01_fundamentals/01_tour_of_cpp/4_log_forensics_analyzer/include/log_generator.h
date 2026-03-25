@@ -8,6 +8,6 @@ namespace logforensics {
 
 void GenerateMockFile(const std::filesystem::path &filepath, int num_lines);
 
-} // namespace logforensics
+}  // namespace logforensics
 
-#endif // LOG_FORENSICS_ANALYZER_LOG_GENERATOR_H_
+#endif  // LOG_FORENSICS_ANALYZER_LOG_GENERATOR_H_

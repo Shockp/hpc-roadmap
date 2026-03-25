@@ -1,10 +1,10 @@
 #include "simulation.h"
 
-#include "constants.h"
-#include "particle.h"
-
 #include <iostream>
 #include <random>
+
+#include "constants.h"
+#include "particle.h"
 
 namespace physics {
 
@@ -68,4 +68,4 @@ void RunSimulation(std::vector<Particle> *particles) {
   std::cout << "Simulation Complete." << std::endl;
 }
 
-} // namespace physics
+}  // namespace physics

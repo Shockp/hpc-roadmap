@@ -1,12 +1,12 @@
-#include "../include/log_analyzer.h"
-#include "../include/log_generator.h"
-#include "../include/models/log_entry.h"
-
 #include <algorithm>
 #include <filesystem>
 #include <iostream>
 #include <unordered_map>
 #include <vector>
+
+#include "../include/log_analyzer.h"
+#include "../include/log_generator.h"
+#include "../include/models/log_entry.h"
 
 int main() {
   std::filesystem::path kLogFileName = "../data/server.log";
@@ -47,7 +47,7 @@ int main() {
 
   std::sort(sorted_ips.begin(), sorted_ips.end(),
             [](const auto &a, const auto &b) {
-              return a.second > b.second; // Descending order
+              return a.second > b.second;  // Descending order
             });
 
   // --- Output using our constrained template ---

@@ -11,11 +11,12 @@
 
 namespace genericsolver {
 
-template <typename T> class LinearSystem {
+template <typename T>
+class LinearSystem {
   static_assert(std::is_floating_point_v<T>,
                 "LinearSystem strictly requires a floating-point type.");
 
-public:
+ public:
   LinearSystem(int n_variables, std::vector<T> augmented_matrix)
       : n_variables_(n_variables), data_(std::move(augmented_matrix)) {
     if (data_.size() !=
@@ -83,7 +84,7 @@ public:
     }
   }
 
-private:
+ private:
   int n_variables_;
   std::vector<T> data_;
 
@@ -98,6 +99,6 @@ private:
   }
 };
 
-} // namespace genericsolver
+}  // namespace genericsolver
 
 #endif

@@ -10,8 +10,8 @@
 
 namespace logforensics {
 
-std::optional<std::vector<LogEntry>>
-ParseLogFile(std::filesystem::path &filepath) {
+std::optional<std::vector<LogEntry>> ParseLogFile(
+    std::filesystem::path &filepath) {
   std::vector<LogEntry> entries;
   std::ifstream in_file(filepath);
 
@@ -51,4 +51,4 @@ ParseLogFile(std::filesystem::path &filepath) {
   return entries;
 }
 
-} // namespace logforensics
+}  // namespace logforensics

@@ -31,4 +31,4 @@ void GenerateMockFile(const std::filesystem::path &filepath, int num_lines) {
   out_file.close();
 }
 
-} // namespace logforensics
+}  // namespace logforensics

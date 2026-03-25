@@ -144,11 +144,11 @@ int main(int argc, char **argv) {
 
     std::cout << "--- 1. Column Statistics ---\n";
     for (uint32_t c = 0; c < num_cols; ++c) {
-      std::cout << "Col " << c << " -> "
-                << "Min: " << std::setw(8) << stats[c].min << " | "
-                << "Max: " << std::setw(8) << stats[c].max << " | "
-                << "Mean: " << std::setw(8) << stats[c].mean << " | "
-                << "Var: " << std::setw(8) << stats[c].variance << "\n";
+      std::cout << "Col " << c << " -> " << "Min: " << std::setw(8)
+                << stats[c].min << " | " << "Max: " << std::setw(8)
+                << stats[c].max << " | " << "Mean: " << std::setw(8)
+                << stats[c].mean << " | " << "Var: " << std::setw(8)
+                << stats[c].variance << "\n";
     }
 
     std::cout << "\n--- 2. K-Means Centroids ---\n";

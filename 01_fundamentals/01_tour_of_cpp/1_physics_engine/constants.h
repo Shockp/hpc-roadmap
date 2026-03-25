@@ -9,6 +9,6 @@ constexpr int kPrintInterval = 100;
 constexpr double kDt = 0.1;
 constexpr double kBoxSize = 100.0;
 
-} // namespace physics
+}  // namespace physics
 
 #endif

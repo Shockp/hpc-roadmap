@@ -27,8 +27,7 @@ Matrix::Matrix(Matrix &&other) noexcept
 }
 
 Matrix &Matrix::operator=(const Matrix &other) {
-  if (this == &other)
-    return *this;
+  if (this == &other) return *this;
 
   double *new_data = new double[other.rows_ * other.cols_];
   std::copy(other.data_, other.data_ + (other.rows_ + other.cols_), new_data);
@@ -43,8 +42,7 @@ Matrix &Matrix::operator=(const Matrix &other) {
 }
 
 Matrix &Matrix::operator=(Matrix &&other) noexcept {
-  if (this == &other)
-    return *this;
+  if (this == &other) return *this;
 
   delete[] data_;
 
@@ -108,4 +106,4 @@ void Matrix::Print() const {
   std::cout << std::endl;
 }
 
-} // namespace memorymanager
+}  // namespace memorymanager

@@ -1,8 +1,6 @@
 #ifndef LOG_FORENSICS_ANALYZER_LOG_ANALYZER_H_
 #define LOG_FORENSICS_ANALYZER_LOG_ANALYZER_H_
 
-#include "./models/log_entry.h"
-
 #include <filesystem>
 #include <iostream>
 #include <optional>
@@ -11,12 +9,15 @@
 #include <utility>
 #include <vector>
 
+#include "./models/log_entry.h"
+
 namespace logforensics {
 
-std::optional<std::vector<LogEntry>>
-ParseLogFile(std::filesystem::path &filepath);
+std::optional<std::vector<LogEntry>> ParseLogFile(
+    std::filesystem::path &filepath);
 
-template <typename Container> void PrintTopN(const Container &c, int n) {
+template <typename Container>
+void PrintTopN(const Container &c, int n) {
   using ExpectedType = std::pair<std::string, int>;
   using ActualType = typename Container::value_type;
 
@@ -30,6 +31,6 @@ template <typename Container> void PrintTopN(const Container &c, int n) {
   }
 }
 
-} // namespace logforensics
+}  // namespace logforensics
 
-#endif // LOG_FORENSICS_ANALYZER_LOG_ANALYZER_H_
+#endif  // LOG_FORENSICS_ANALYZER_LOG_ANALYZER_H_

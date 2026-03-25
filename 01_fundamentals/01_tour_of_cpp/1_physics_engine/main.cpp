@@ -1,7 +1,7 @@
+#include <vector>
+
 #include "particle.h"
 #include "simulation.h"
-
-#include <vector>
 
 int main() {
   std::vector<physics::Particle> particles;

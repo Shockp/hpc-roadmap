@@ -12,6 +12,6 @@ struct LogEntry {
   int status_code;
 };
 
-} // namespace logforensics
+}  // namespace logforensics
 
-#endif // LOG_FORENSICS_ANALYZER_LOG_ENTRY_H_
+#endif  // LOG_FORENSICS_ANALYZER_LOG_ENTRY_H_
