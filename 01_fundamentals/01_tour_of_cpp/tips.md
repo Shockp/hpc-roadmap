@@ -401,3 +401,36 @@
 - **Regular types:** The ideal for types is regular.
 - **Standard concepts:** Prefer standard-library concepts where they apply.
 - **Parallel execution:** When requesting parallel execution, be sure to avoid data races and deadlock.
+
+## 15. Pointers and Containers
+
+### General
+- **Libraries:** A library doesn't have to be large or complicated to be useful.
+- **Resources:** A resource is anything that has to be acquired and (explicitly or implicitly) released.
+- **RAII:** Use resource handles to manage resources (RAII).
+- **Raw pointers:** The problem with a `T*` is that it can be used to represent anything, so we cannot easily determine a "raw" pointer's purpose.
+
+### Smart Pointers
+- **`unique_ptr`:** Use `unique_ptr` to refer to objects of polymorphic type.
+- **`shared_ptr`:** Use `shared_ptr` to refer to shared objects (only).
+- **Resource handles:** Prefer resource handles with specific semantics to smart pointers.
+- **Local variables:** Don't use a smart pointer where a local variable will do.
+- **Prefer `unique_ptr`:** Prefer `unique_ptr` to `shared_ptr`.
+- **Ownership transfer:** Use `unique_ptr` or `shared_ptr` as arguments or return values only to transfer ownership responsibilities.
+- **Construction:** Use `make_unique()` to construct `unique_ptr`s and `make_shared()` to construct `shared_ptr`s.
+- **Garbage collection:** Prefer smart pointers to garbage collection.
+
+### Spans & Arrays
+- **Spans:** Prefer spans to pointer-plus-count interfaces.
+- **Range-for:** `span` supports range-for.
+- **`array`:** Use `array` where you need a sequence with a `constexpr` size.
+- **Built-in arrays:** Prefer `array` over built-in arrays.
+- **`bitset`:** Use `bitset` if you need N bits and N is not necessarily the number of bits in a built-in integer type.
+
+### Pairs, Tuples & Variants
+- **`pair` and `tuple`:** Don't overuse `pair` and `tuple`; named structs often lead to more readable code.
+- **`pair` construction:** When using `pair`, use template argument deduction or `make_pair()` to avoid redundant type specification.
+- **`tuple` construction:** When using `tuple`, use template argument deduction or `make_tuple()` to avoid redundant type specification.
+- **`variant`:** Prefer `variant` to explicit use of unions.
+- **Visiting variants:** When selecting among a set of alternatives using a `variant`, consider using `visit()` and `overloaded()`.
+- **Tag checking:** If more than one alternative is possible for a `variant`, `optional`, or `any`, check the tag before access.
