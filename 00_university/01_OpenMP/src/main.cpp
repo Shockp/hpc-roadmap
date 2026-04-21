@@ -1,11 +1,11 @@
+#include <mpi.h>
+
 #include <cstdint>
 #include <cstdlib>
 #include <exception>
 #include <iomanip>
 #include <iostream>
 #include <vector>
-
-#include <mpi.h>
 
 #include "../include/io_utils.h"
 #include "../include/kmeans.h"

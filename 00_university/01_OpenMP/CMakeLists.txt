@@ -61,7 +61,7 @@ if(CLANG_FORMAT_EXE)
         "${CMAKE_CURRENT_SOURCE_DIR}/include/*.h"
     )
     add_custom_target(format
-        COMMAND ${CLANG_FORMAT_EXE} -i -style=Google ${ALL_SOURCE_FILES}
-        COMMENT "Applying Google C++ Style Guide to all source code..."
+        COMMAND ${CLANG_FORMAT_EXE} -i -style=file ${ALL_SOURCE_FILES}
+        COMMENT "Applying Google C++ Style Guide via .clang-format..."
     )
 endif()
