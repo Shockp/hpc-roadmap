@@ -11,45 +11,44 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # ==============================================================================
-# Phase 1: Sequential Baseline Setup
+# Simulation Executable Configuration
 # ==============================================================================
-# Note: You will need to create empty dummy files for src/main.cc, src/grid.cc, 
-# and src/solver_seq.cc so CMake can configure successfully initially.
+# We use a single executable that can route to different solvers at runtime
+# based on command-line arguments.
 
-add_executable(heat_sim_seq 
+set(HEAT_SIM_SOURCES 
     src/main.cc 
     src/grid.cc 
     src/solver_seq.cc
 )
 
+# Check for OpenMP support
+find_package(OpenMP)
+if(OpenMP_CXX_FOUND)
+    list(APPEND HEAT_SIM_SOURCES src/solver_omp.cc)
+endif()
+
+add_executable(heat_sim ${HEAT_SIM_SOURCES})
+
 # Specify include directory for header files (.h).
-target_include_directories(heat_sim_seq PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(heat_sim PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 # Compilation flags oriented towards HPC and extreme performance.
-target_compile_options(heat_sim_seq PRIVATE -O3 -march=native -Wall -Wextra -Werror -pedantic)
+target_compile_options(heat_sim PRIVATE -O3 -march=native -Wall -Wextra -Werror -pedantic)
+
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(heat_sim PUBLIC OpenMP::OpenMP_CXX)
+    target_compile_definitions(heat_sim PRIVATE ENABLE_OPENMP)
+endif()
 
 # ==============================================================================
 # Future Phases Placeholder (Uncomment as you progress)
 # ==============================================================================
 
-# find_package(OpenMP)
-# if(OpenMP_CXX_FOUND)
-#     add_executable(heat_sim_omp src/main.cc src/grid.cc src/solver_omp.cc)
-#     target_include_directories(heat_sim_omp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-#     target_link_libraries(heat_sim_omp PUBLIC OpenMP::OpenMP_CXX)
-# endif()
-
 # find_package(MPI)
 # if(MPI_CXX_FOUND)
-#     add_executable(heat_sim_mpi src/main.cc src/grid.cc src/solver_mpi.cc)
-#     target_include_directories(heat_sim_mpi PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-#     target_link_libraries(heat_sim_mpi PUBLIC MPI::MPI_CXX)
-# endif()
-
-# if(PROJECT_IS_TOP_LEVEL OR DEFINED CMAKE_CUDA_COMPILER)
-#     add_executable(heat_sim_cuda src/main.cc src/grid.cc src/solver_cuda.cu)
-#     target_include_directories(heat_sim_cuda PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-#     target_compile_options(heat_sim_cuda PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-O3 -arch=native>)
+#     # Note: You'll need to add MPI sources and link libraries to 'heat_sim'
+#     # and define ENABLE_MPI in main.cc
 # endif()
 
 # -----------------------------------------------------------------------------
