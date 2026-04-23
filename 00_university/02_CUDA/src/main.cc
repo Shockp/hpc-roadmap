@@ -7,16 +7,25 @@
 #include "grid.h"
 #include "solver_seq.h"
 
+#ifdef ENABLE_OPENMP
+#include "solver_omp.h"
+#endif
+
 int main(int argc, char** argv) {
   // 1. Command line Interface Parsing
-  if (argc != 3) {
-    std::cerr << "Usage: " << argv[0] << " <grid_size_N> <iterations>\n"
-              << "Example: " << argv[0] << " 4096 100\n";
+  if (argc != 4) {
+    std::cerr << "Usage: " << argv[0] << " <grid_size_N> <iterations> <mode>\n"
+              << "Modes: 'seq' (Sequential)"
+#ifdef ENABLE_OPENMP
+              << ", 'omp' (OpenMP)"
+#endif
+              << "\nExample: " << argv[0] << " 4096 100\n";
     return EXIT_FAILURE;
   }
 
   int n = 0;
   int iterations = 0;
+  std::string mode = argv[3];
 
   try {
     n = std::stoi(argv[1]);
@@ -35,7 +44,8 @@ int main(int argc, char** argv) {
   // 2. Initialization
   std::cout << "Initializing Heat Diffusion Simulation (Sequential)...\n"
             << "Grid Size: " << n << " x " << n << "\n"
-            << "Iterations: " << iterations << "\n";
+            << "Iterations: " << iterations << "\n"
+            << "Execution Mode: " << mode << "\n";
 
   heat_sim::Grid grid(n);
 
@@ -44,7 +54,19 @@ int main(int argc, char** argv) {
 
   auto start_time = std::chrono::high_resolution_clock::now();
 
-  heat_sim::SolverSeq::Run(grid, iterations);
+  // Route execution based on the chosen mode
+  if (mode == "seq") {
+    heat_sim::SolverSeq::Run(grid, iterations);
+  }
+#ifdef ENABLE_OPENMP
+  else if (mode == "omp") {
+    heat_sim::SolverOmp::Run(grid, iterations);
+  }
+#endif
+  else {
+    std::cerr << "Error: Unknown execution mode '" << mode << "'.\n";
+    return EXIT_FAILURE;
+  }
 
   auto end_time = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> elapsed_seconds = end_time - start_time;
