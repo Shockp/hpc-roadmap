@@ -29,15 +29,19 @@ target_include_directories(heat_sim_seq PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/incl
 target_compile_options(heat_sim_seq PRIVATE -O3 -march=native -Wall -Wextra -Werror -pedantic)
 
 # ==============================================================================
-# Future Phases Placeholder (Uncomment as you progress)
+# Phase 2: Multicore Scaling (OpenMP)
 # ==============================================================================
 
-# find_package(OpenMP)
-# if(OpenMP_CXX_FOUND)
-#     add_executable(heat_sim_omp src/main.cc src/grid.cc src/solver_omp.cc)
-#     target_include_directories(heat_sim_omp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-#     target_link_libraries(heat_sim_omp PUBLIC OpenMP::OpenMP_CXX)
-# endif()
+find_package(OpenMP)
+if(OpenMP_CXX_FOUND)
+    add_executable(heat_sim_omp src/main.cc src/grid.cc src/solver_omp.cc)
+    target_include_directories(heat_sim_omp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_link_libraries(heat_sim_omp PUBLIC OpenMP::OpenMP_CXX)
+endif()
+
+# ==============================================================================
+# Future Phases Placeholder (Uncomment as you progress)
+# ==============================================================================
 
 # find_package(MPI)
 # if(MPI_CXX_FOUND)
