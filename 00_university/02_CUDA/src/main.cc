@@ -4,7 +4,6 @@
 #include <iostream>
 #include <string>
 
-#include "config.h"
 #include "grid.h"
 #include "solver_seq.h"
 
