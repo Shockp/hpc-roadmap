@@ -2,11 +2,17 @@
 
 namespace heat_sim {
 
-Grid::Grid(int n)
-    : n_(n),
-      // Initialize both buffers to the default sink temperature (0.0)
-      t_old_(n * n, kDefaultBoundaryTemp),
-      t_new_(n * n, kDefaultBoundaryTemp) {
+// Sequential and OpenMP compatibility
+Grid::Grid(int n) : Grid(n, n, true, true) {}
+
+// MPI compatibility
+Grid::Grid(int rows, int cols, bool is_global_top, bool is_global_bottom)
+    : rows_(rows),
+      cols_(cols),
+      is_global_top_(is_global_top),
+      is_global_bottom_(is_global_bottom),
+      t_old_(rows * cols, kDefaultBoundaryTemp),
+      t_new_(rows * cols, kDefaultBoundaryTemp) {
   InitializeBoundaries();
 }
 
@@ -16,12 +22,13 @@ void Grid::SwapBuffers() {
 }
 
 void Grid::InitializeBoundaries() {
-  // Set the top row (i = 0) to 100.0 for both buffers.
-  // The bottom, left, and right edges remain 0.0 as initialized by the
-  // constructor.
-  for (int j = 0; j < n_; ++j) {
-    t_old_[Index(0, j)] = kTopBoundaryTemp;
-    t_new_[Index(0, j)] = kTopBoundaryTemp;
+  // Only apply the 100.0 top boundary if this grid contains the global top
+  // edge. Otherwise, the top row is just a halo row initialized to 0.0.
+  if (is_global_top_) {
+    for (int j = 0; j < cols_; ++j) {
+      t_old_[Index(0, j)] = kTopBoundaryTemp;
+      t_new_[Index(0, j)] = kTopBoundaryTemp;
+    }
   }
 }
 
