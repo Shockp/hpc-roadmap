@@ -2,11 +2,16 @@
 
 #include <omp.h>
 
+#include <chrono>
+
 namespace heat_sim {
 
-void SolverOmp::Run(Grid& grid, int iterations) {
+ProfilerResult SolverOmp::Run(Grid& grid, int iterations) {
+  ProfilerResult res;
   const int n = grid.rows();
   constexpr double kInvFour = 0.25;
+
+  auto start_compute = std::chrono::high_resolution_clock::now();
 
 // OPTIMIZATION: Open the parallel region ONCE outside the time loop.
 // This eliminates the overhead of thread creation/destruction at every step.
@@ -49,6 +54,10 @@ void SolverOmp::Run(Grid& grid, int iterations) {
       local_t_new = grid.t_new_ptr();
     }
   }
+  auto end_compute = std::chrono::high_resolution_clock::now();
+  res.compute_time =
+      std::chrono::duration<double>(end_compute - start_compute).count();
+  return res;
 }
 
 }  // namespace heat_sim

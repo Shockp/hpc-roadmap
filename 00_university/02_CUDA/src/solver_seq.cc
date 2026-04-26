@@ -1,13 +1,21 @@
 #include "solver_seq.h"
 
+#include <chrono>
 namespace heat_sim {
 
-void SolverSeq::Run(Grid& grid, int iterations) {
+ProfilerResult SolverSeq::Run(Grid& grid, int iterations) {
+  ProfilerResult res;
   for (int t = 0; t < iterations; ++t) {
+    auto start_compute = std::chrono::high_resolution_clock::now();
     ComputeNextState(grid);
+    auto end_compute = std::chrono::high_resolution_clock::now();
+    res.compute_time +=
+        std::chrono::duration<double>(end_compute - start_compute).count();
+
     // Buffer swap happens after the entire grid is updated for the current step
     grid.SwapBuffers();
   }
+  return res;
 }
 
 void SolverSeq::ComputeNextState(Grid& grid) {
