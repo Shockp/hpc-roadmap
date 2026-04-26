@@ -5,7 +5,7 @@
 namespace heat_sim {
 
 void SolverOmp::Run(Grid& grid, int iterations) {
-  const int n = grid.n();
+  const int n = grid.rows();
   constexpr double kInvFour = 0.25;
 
 // OPTIMIZATION: Open the parallel region ONCE outside the time loop.

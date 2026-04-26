@@ -11,7 +11,7 @@ void SolverSeq::Run(Grid& grid, int iterations) {
 }
 
 void SolverSeq::ComputeNextState(Grid& grid) {
-  const int n = grid.n();
+  const int n = grid.rows();
 
   // Extracting raw pointers prevents the overhead of calling t_old_ptr()
   // and vector::operator[] millions of times inside the tight loop.
