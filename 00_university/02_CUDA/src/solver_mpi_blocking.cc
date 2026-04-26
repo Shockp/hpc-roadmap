@@ -1,8 +1,7 @@
-#include "solver_mpi.h"
-
 #include <mpi.h>
 
 #include "grid.h"
+#include "solver_mpi.h"
 
 namespace heat_sim {
 
@@ -29,7 +28,7 @@ DomainDecomposition::DomainDecomposition(int n, int mpi_rank, int mpi_size)
   is_bottom_rank = (rank == size - 1);
 }
 
-void SolverMpi::Run(int global_n, int iterations) {
+void SolverMpi::RunBlocking(int global_n, int iterations) {
   int rank, size;
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   MPI_Comm_size(MPI_COMM_WORLD, &size);

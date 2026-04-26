@@ -30,7 +30,10 @@ endif()
 
 find_package(MPI)
 if(MPI_CXX_FOUND)
-    list(APPEND HEAT_SIM_SOURCES src/solver_mpi.cc)
+    list(APPEND HEAT_SIM_SOURCES 
+        src/solver_mpi_blocking.cc
+        src/solver_mpi_nonblocking.cc
+    )
 endif()
 
 add_executable(heat_sim ${HEAT_SIM_SOURCES})

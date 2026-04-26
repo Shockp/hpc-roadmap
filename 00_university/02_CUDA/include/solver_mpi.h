@@ -23,7 +23,8 @@ struct DomainDecomposition {
 class SolverMpi {
  public:
   // Executes the distributed multinode simulation using MPI.
-  static void Run(int global_n, int iteration);
+  static void RunBlocking(int global_n, int iteration);
+  static void RunNonBlocking(int global_n, int iteration);
 };
 
 }  // namespace heat_sim
