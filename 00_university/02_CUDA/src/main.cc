@@ -5,6 +5,7 @@
 #include <string>
 
 #include "grid.h"
+#include "profiler.h"
 #include "solver_seq.h"
 
 #ifdef ENABLE_OPENMP
@@ -12,6 +13,7 @@
 #endif
 #ifdef ENABLE_MPI
 #include <mpi.h>
+
 #include "solver_mpi.h"
 #endif
 
@@ -24,7 +26,8 @@ int main(int argc, char** argv) {
               << ", 'omp' (OpenMP)"
 #endif
 #ifdef ENABLE_MPI
-              << ", 'mpi_blocking' (MPI Blocking), 'mpi_nonblocking' (MPI Non-Blocking)"
+              << ", 'mpi_blocking' (MPI Blocking), 'mpi_nonblocking' (MPI "
+                 "Non-Blocking)"
 #endif
               << "\nExample: " << argv[0] << " 4096 100 seq\n";
     return EXIT_FAILURE;
@@ -65,27 +68,40 @@ int main(int argc, char** argv) {
               << "Execution Mode: " << mode << "\n";
   }
 
-  heat_sim::Grid grid(n);
-
   // 3. Execution & Profiling
-  std::cout << "Simulation started..." << std::endl;
+  if (rank == 0) {
+    std::cout << "Simulation started..." << std::endl;
+  }
 
+  heat_sim::ProfilerResult res;
   auto start_time = std::chrono::high_resolution_clock::now();
 
   // Route execution based on the chosen mode
   if (mode == "seq") {
-    heat_sim::SolverSeq::Run(grid, iterations);
+    auto start_setup = std::chrono::high_resolution_clock::now();
+    heat_sim::Grid grid(n);
+    auto end_setup = std::chrono::high_resolution_clock::now();
+
+    res = heat_sim::SolverSeq::Run(grid, iterations);
+    res.setup_time +=
+        std::chrono::duration<double>(end_setup - start_setup).count();
   }
 #ifdef ENABLE_OPENMP
   else if (mode == "omp") {
-    heat_sim::SolverOmp::Run(grid, iterations);
+    auto start_setup = std::chrono::high_resolution_clock::now();
+    heat_sim::Grid grid(n);
+    auto end_setup = std::chrono::high_resolution_clock::now();
+
+    res = heat_sim::SolverOmp::Run(grid, iterations);
+    res.setup_time +=
+        std::chrono::duration<double>(end_setup - start_setup).count();
   }
 #endif
 #ifdef ENABLE_MPI
   else if (mode == "mpi_blocking") {
-    heat_sim::SolverMpi::RunBlocking(n, iterations);
+    res = heat_sim::SolverMpi::RunBlocking(n, iterations);
   } else if (mode == "mpi_nonblocking") {
-    heat_sim::SolverMpi::RunNonBlocking(n, iterations);
+    res = heat_sim::SolverMpi::RunNonBlocking(n, iterations);
   }
 #endif
   else {
@@ -94,13 +110,16 @@ int main(int argc, char** argv) {
   }
 
   auto end_time = std::chrono::high_resolution_clock::now();
-  std::chrono::duration<double> elapsed_seconds = end_time - start_time;
+  res.total_time = std::chrono::duration<double>(end_time - start_time).count();
 
   // 4. Reporting
   if (rank == 0) {
     std::cout << "Simulation complete.\n"
-              << "Total Execution Time: " << elapsed_seconds.count()
-              << " seconds.\n";
+              << "--- Profiling Results ---\n"
+              << "Setup Time:       " << res.setup_time << " s\n"
+              << "Compute Time:     " << res.compute_time << " s\n"
+              << "Comm Time:        " << res.comm_time << " s\n"
+              << "Total Time:       " << res.total_time << " s\n";
   }
 
 #ifdef ENABLE_MPI
