@@ -28,7 +28,21 @@ if(OpenMP_CXX_FOUND)
     list(APPEND HEAT_SIM_SOURCES src/solver_omp.cc)
 endif()
 
+find_package(MPI)
+if(MPI_CXX_FOUND)
+    list(APPEND HEAT_SIM_SOURCES 
+        src/solver_mpi_utils.cc
+        src/solver_mpi_blocking.cc
+        src/solver_mpi_nonblocking.cc
+    )
+endif()
+
 add_executable(heat_sim ${HEAT_SIM_SOURCES})
+
+if(MPI_CXX_FOUND)
+    target_link_libraries(heat_sim PUBLIC MPI::MPI_CXX)
+    target_compile_definitions(heat_sim PRIVATE ENABLE_MPI)
+endif()
 
 # Specify include directory for header files (.h).
 target_include_directories(heat_sim PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -40,16 +54,6 @@ if(OpenMP_CXX_FOUND)
     target_link_libraries(heat_sim PUBLIC OpenMP::OpenMP_CXX)
     target_compile_definitions(heat_sim PRIVATE ENABLE_OPENMP)
 endif()
-
-# ==============================================================================
-# Future Phases Placeholder (Uncomment as you progress)
-# ==============================================================================
-
-# find_package(MPI)
-# if(MPI_CXX_FOUND)
-#     # Note: You'll need to add MPI sources and link libraries to 'heat_sim'
-#     # and define ENABLE_MPI in main.cc
-# endif()
 
 # -----------------------------------------------------------------------------
 # OPTIONAL TARGET: Code formatter (Google C++ Style Guide).
