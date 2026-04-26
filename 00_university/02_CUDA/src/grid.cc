@@ -1,5 +1,7 @@
 #include "grid.h"
 
+#include "config.h"
+
 namespace heat_sim {
 
 // Sequential and OpenMP compatibility

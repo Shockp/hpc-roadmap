@@ -3,8 +3,6 @@
 
 #include <vector>
 
-#include "config.h"
-
 namespace heat_sim {
 
 class Grid {
