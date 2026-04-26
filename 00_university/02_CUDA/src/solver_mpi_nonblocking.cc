@@ -1,21 +1,28 @@
 #include <mpi.h>
 
+#include <chrono>
+
 #include "grid.h"
 #include "solver_mpi.h"
 
 namespace heat_sim {
 
-void SolverMpi::RunNonBlocking(int global_n, int iterations) {
+ProfilerResult SolverMpi::RunNonBlocking(int global_n, int iterations) {
+  ProfilerResult res;
   int rank, size;
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   MPI_Comm_size(MPI_COMM_WORLD, &size);
 
+  auto start_setup = std::chrono::high_resolution_clock::now();
   // 1. Setup Distributed Domain
   DomainDecomposition domain(global_n, rank, size);
 
   // Allocate the local grid including the extra 2 rows for the halos.
   Grid grid(domain.total_rows, global_n, domain.is_top_rank,
             domain.is_bottom_rank);
+  auto end_setup = std::chrono::high_resolution_clock::now();
+  res.setup_time +=
+      std::chrono::duration<double>(end_setup - start_setup).count();
 
   const int cols = global_n;
   constexpr double kInvFour = 0.25;
@@ -44,6 +51,7 @@ void SolverMpi::RunNonBlocking(int global_n, int iterations) {
     int req_count = 0;
 
     // --- 1. INITIATE NON-BLOCKING COMMUNICATIONS ---
+    auto start_comm1 = std::chrono::high_resolution_clock::now();
     // Exchange with the Top Neighbor (Tag 0 for upward, 1 for downward)
     if (!domain.is_top_rank) {
       MPI_Irecv(recv_top, cols, MPI_DOUBLE, rank - 1, 1, MPI_COMM_WORLD,
@@ -59,10 +67,14 @@ void SolverMpi::RunNonBlocking(int global_n, int iterations) {
       MPI_Isend(send_bottom, cols, MPI_DOUBLE, rank + 1, 1, MPI_COMM_WORLD,
                 &requests[req_count++]);
     }
+    auto end_comm1 = std::chrono::high_resolution_clock::now();
+    res.comm_time +=
+        std::chrono::duration<double>(end_comm1 - start_comm1).count();
 
     // --- 2. ASYNCHRONOUS COMPUTATION (LATENCY HIDING) ---
     // Compute the INNER grid. These rows (2 to local_rows - 1) only depend on
     // local data, so we can calculate them while the network is busy.
+    auto start_compute1 = std::chrono::high_resolution_clock::now();
     for (int i = 2; i < domain.local_rows; ++i) {
       for (int j = 1; j < cols - 1; ++j) {
         const int center = i * cols + j;
@@ -76,16 +88,24 @@ void SolverMpi::RunNonBlocking(int global_n, int iterations) {
             kInvFour;
       }
     }
+    auto end_compute1 = std::chrono::high_resolution_clock::now();
+    res.compute_time +=
+        std::chrono::duration<double>(end_compute1 - start_compute1).count();
 
     // --- 3. SYNCHRONIZATION ---
     // The CPU has finished the inner grid. Now we MUST wait for the network to
     // finish delivering the halo rows before we computing our local boundaries.
+    auto start_comm2 = std::chrono::high_resolution_clock::now();
     if (req_count > 0) {
       MPI_Waitall(req_count, requests, MPI_STATUSES_IGNORE);
     }
+    auto end_comm2 = std::chrono::high_resolution_clock::now();
+    res.comm_time +=
+        std::chrono::duration<double>(end_comm2 - start_comm2).count();
 
     // --- 4. BOUNDARY COMPUTATION ---
     // Now that halos are safely in memory, compute the To compute row (i = 1)
+    auto start_compute2 = std::chrono::high_resolution_clock::now();
     if (domain.local_rows >= 1) {
       int i = 1;
       for (int j = 1; j < cols - 1; ++j) {
@@ -118,10 +138,14 @@ void SolverMpi::RunNonBlocking(int global_n, int iterations) {
             kInvFour;
       }
     }
+    auto end_compute2 = std::chrono::high_resolution_clock::now();
+    res.compute_time +=
+        std::chrono::duration<double>(end_compute2 - start_compute2).count();
 
     // --- SWAP BUFFERS ---
     grid.SwapBuffers();
   }
+  return res;
 }
 
 }  // namespace heat_sim

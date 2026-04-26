@@ -1,6 +1,8 @@
 #ifndef HEAT_DIFFUSION_SOLVER_MPI_H_
 #define HEAT_DIFFUSION_SOLVER_MPI_H_
 
+#include "profiler.h"
+
 namespace heat_sim {
 
 // Encapsulates the math for splitting the global grid among MPI processes.
@@ -23,10 +25,10 @@ struct DomainDecomposition {
 class SolverMpi {
  public:
   // Executes the simulation using blocking MPI communications.
-  static void RunBlocking(int global_n, int iteration);
+  static ProfilerResult RunBlocking(int global_n, int iteration);
 
   // Executes the simulation using non-blocking MPI communications.
-  static void RunNonBlocking(int global_n, int iteration);
+  static ProfilerResult RunNonBlocking(int global_n, int iteration);
 };
 
 }  // namespace heat_sim
