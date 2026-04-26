@@ -22,8 +22,10 @@ struct DomainDecomposition {
 
 class SolverMpi {
  public:
-  // Executes the distributed multinode simulation using MPI.
+  // Executes the simulation using blocking MPI communications.
   static void RunBlocking(int global_n, int iteration);
+
+  // Executes the simulation using non-blocking MPI communications.
   static void RunNonBlocking(int global_n, int iteration);
 };
 
