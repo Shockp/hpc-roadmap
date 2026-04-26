@@ -10,6 +10,10 @@
 #ifdef ENABLE_OPENMP
 #include "solver_omp.h"
 #endif
+#ifdef ENABLE_MPI
+#include <mpi.h>
+#include "solver_mpi.h"
+#endif
 
 int main(int argc, char** argv) {
   // 1. Command line Interface Parsing
@@ -19,7 +23,10 @@ int main(int argc, char** argv) {
 #ifdef ENABLE_OPENMP
               << ", 'omp' (OpenMP)"
 #endif
-              << "\nExample: " << argv[0] << " 4096 100\n";
+#ifdef ENABLE_MPI
+              << ", 'mpi_blocking' (MPI Blocking), 'mpi_nonblocking' (MPI Non-Blocking)"
+#endif
+              << "\nExample: " << argv[0] << " 4096 100 seq\n";
     return EXIT_FAILURE;
   }
 
@@ -42,10 +49,21 @@ int main(int argc, char** argv) {
   }
 
   // 2. Initialization
-  std::cout << "Initializing Heat Diffusion Simulation (Sequential)...\n"
-            << "Grid Size: " << n << " x " << n << "\n"
-            << "Iterations: " << iterations << "\n"
-            << "Execution Mode: " << mode << "\n";
+#ifdef ENABLE_MPI
+  int provided;
+  MPI_Init_thread(&argc, &argv, MPI_THREAD_FUNNELED, &provided);
+  int rank;
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+#else
+  int rank = 0;
+#endif
+
+  if (rank == 0) {
+    std::cout << "Initializing Heat Diffusion Simulation...\n"
+              << "Grid Size: " << n << " x " << n << "\n"
+              << "Iterations: " << iterations << "\n"
+              << "Execution Mode: " << mode << "\n";
+  }
 
   heat_sim::Grid grid(n);
 
@@ -63,6 +81,13 @@ int main(int argc, char** argv) {
     heat_sim::SolverOmp::Run(grid, iterations);
   }
 #endif
+#ifdef ENABLE_MPI
+  else if (mode == "mpi_blocking") {
+    heat_sim::SolverMpi::RunBlocking(n, iterations);
+  } else if (mode == "mpi_nonblocking") {
+    heat_sim::SolverMpi::RunNonBlocking(n, iterations);
+  }
+#endif
   else {
     std::cerr << "Error: Unknown execution mode '" << mode << "'.\n";
     return EXIT_FAILURE;
@@ -72,9 +97,15 @@ int main(int argc, char** argv) {
   std::chrono::duration<double> elapsed_seconds = end_time - start_time;
 
   // 4. Reporting
-  std::cout << "Simulation complete.\n"
-            << "Total Execution Time: " << elapsed_seconds.count()
-            << " seconds.\n";
+  if (rank == 0) {
+    std::cout << "Simulation complete.\n"
+              << "Total Execution Time: " << elapsed_seconds.count()
+              << " seconds.\n";
+  }
+
+#ifdef ENABLE_MPI
+  MPI_Finalize();
+#endif
 
   return EXIT_SUCCESS;
 }
