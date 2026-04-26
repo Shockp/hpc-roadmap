@@ -31,6 +31,7 @@ endif()
 find_package(MPI)
 if(MPI_CXX_FOUND)
     list(APPEND HEAT_SIM_SOURCES 
+        src/solver_mpi_utils.cc
         src/solver_mpi_blocking.cc
         src/solver_mpi_nonblocking.cc
     )
