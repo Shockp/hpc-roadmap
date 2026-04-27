@@ -1,9 +1,5 @@
-#include <__clang_cuda_builtin_vars.h>
-#include <__clang_cuda_runtime_wrapper.h>
+#include <chrono>
 #include <cuda_runtime.h>
-#include <cuda_runtime_api.h>
-#include <driver_types.h>
-
 #include "solver_cuda.cuh"
 
 namespace heat_sim {
@@ -76,10 +72,12 @@ __global__ void StencilKernel(const double* __restrict__ d_t_old,
 // 2. HOST CODE (CPU WRAPPER)
 // -----------------------------------------------------------------------------
 
-void SolverCuda::Run(Grid& host_grid, int iterations) {
+ProfilerResult SolverCuda::Run(Grid& host_grid, int iterations) {
+  ProfilerResult res;
   const int n = host_grid.cols();
   const size_t bytes = n * n * sizeof(double);
 
+  auto start_comm1 = std::chrono::high_resolution_clock::now();
   // 1. Allocate Device Memory
   double* d_t_old = nullptr;
   double* d_t_new = nullptr;
@@ -92,6 +90,8 @@ void SolverCuda::Run(Grid& host_grid, int iterations) {
   // We only transfer across the slow PCIe bus ONCE before the loop begins.
   cudaMemcpy(d_t_old, host_grid.t_old_ptr(), bytes, cudaMemcpyHostToDevice);
   cudaMemcpy(d_t_new, host_grid.t_new_ptr(), bytes, cudaMemcpyHostToDevice);
+  auto end_comm1 = std::chrono::high_resolution_clock::now();
+  res.comm_time += std::chrono::duration<double>(end_comm1 - start_comm1).count();
 
   // 3. Configure Execution Grid
   dim3 threads(kBlockDimX, kBlockDimY);
@@ -100,6 +100,7 @@ void SolverCuda::Run(Grid& host_grid, int iterations) {
   // the entire N x N grid, even if N is not perfectly divisible by 16.
   dim3 blocks((n + threads.x - 1) / threads.x, (n + threads.y - 1) / threads.y);
 
+  auto start_compute = std::chrono::high_resolution_clock::now();
   // 4. Time-Stepping Loop (Entirely on Device)
   for (int t = 0; t < iterations; ++t) {
     // Launch the kernel asynchronously
@@ -115,7 +116,10 @@ void SolverCuda::Run(Grid& host_grid, int iterations) {
     d_t_old = d_t_new;
     d_t_new = temp;
   }
+  auto end_compute = std::chrono::high_resolution_clock::now();
+  res.compute_time += std::chrono::duration<double>(end_compute - start_compute).count();
 
+  auto start_comm2 = std::chrono::high_resolution_clock::now();
   // 5. Transfer Final State Back (Device -> Host)
   // Because we swapped pointers at the end of every loop iteration,
   // the final, correct state is always held by d_t_old.
@@ -125,6 +129,10 @@ void SolverCuda::Run(Grid& host_grid, int iterations) {
   // 6. Cleanup Device Memory to prevent memory leaks
   cudaFree(d_t_old);
   cudaFree(d_t_new);
+  auto end_comm2 = std::chrono::high_resolution_clock::now();
+  res.comm_time += std::chrono::duration<double>(end_comm2 - start_comm2).count();
+  
+  return res;
 }
 
 }  // namespace heat_sim

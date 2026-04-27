@@ -22,6 +22,10 @@ set(HEAT_SIM_SOURCES
     src/solver_seq.cc
 )
 
+if(CMAKE_CUDA_COMPILER)
+    list(APPEND HEAT_SIM_SOURCES src/solver_cuda.cu)
+endif()
+
 # Check for OpenMP support
 find_package(OpenMP)
 if(OpenMP_CXX_FOUND)
@@ -48,11 +52,15 @@ endif()
 target_include_directories(heat_sim PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 # Compilation flags oriented towards HPC and extreme performance.
-target_compile_options(heat_sim PRIVATE -O3 -march=native -Wall -Wextra -Werror -pedantic)
+target_compile_options(heat_sim PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-O3 -march=native -Wall -Wextra -Werror -pedantic>)
 
 if(OpenMP_CXX_FOUND)
     target_link_libraries(heat_sim PUBLIC OpenMP::OpenMP_CXX)
     target_compile_definitions(heat_sim PRIVATE ENABLE_OPENMP)
+endif()
+
+if(CMAKE_CUDA_COMPILER)
+    target_compile_definitions(heat_sim PRIVATE ENABLE_CUDA)
 endif()
 
 # -----------------------------------------------------------------------------
