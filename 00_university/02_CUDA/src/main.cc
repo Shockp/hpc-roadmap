@@ -16,6 +16,9 @@
 
 #include "solver_mpi.h"
 #endif
+#ifdef ENABLE_CUDA
+#include "solver_cuda.cuh"
+#endif
 
 int main(int argc, char** argv) {
   // 1. Command line Interface Parsing
@@ -24,6 +27,9 @@ int main(int argc, char** argv) {
               << "Modes: 'seq' (Sequential)"
 #ifdef ENABLE_OPENMP
               << ", 'omp' (OpenMP)"
+#endif
+#ifdef ENABLE_CUDA
+              << ", 'cuda' (CUDA)"
 #endif
 #ifdef ENABLE_MPI
               << ", 'mpi_blocking' (MPI Blocking), 'mpi_nonblocking' (MPI "
@@ -102,6 +108,17 @@ int main(int argc, char** argv) {
     res = heat_sim::SolverMpi::RunBlocking(n, iterations);
   } else if (mode == "mpi_nonblocking") {
     res = heat_sim::SolverMpi::RunNonBlocking(n, iterations);
+  }
+#endif
+#ifdef ENABLE_CUDA
+  else if (mode == "cuda") {
+    auto start_setup = std::chrono::high_resolution_clock::now();
+    heat_sim::Grid grid(n);
+    auto end_setup = std::chrono::high_resolution_clock::now();
+
+    res = heat_sim::SolverCuda::Run(grid, iterations);
+    res.setup_time +=
+        std::chrono::duration<double>(end_setup - start_setup).count();
   }
 #endif
   else {
