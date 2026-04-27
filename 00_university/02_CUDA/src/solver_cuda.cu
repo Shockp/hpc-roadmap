@@ -1,6 +1,8 @@
 #include <__clang_cuda_builtin_vars.h>
 #include <__clang_cuda_runtime_wrapper.h>
 #include <cuda_runtime.h>
+#include <cuda_runtime_api.h>
+#include <driver_types.h>
 
 #include "solver_cuda.cuh"
 
@@ -68,6 +70,61 @@ __global__ void StencilKernel(const double* __restrict__ d_t_old,
                   tile[s_row][s_col - 1] + tile[s_row][s_col + 1]);
     }
   }
+}
+
+// -----------------------------------------------------------------------------
+// 2. HOST CODE (CPU WRAPPER)
+// -----------------------------------------------------------------------------
+
+void SolverCuda::Run(Grid& host_grid, int iterations) {
+  const int n = host_grid.cols();
+  const size_t bytes = n * n * sizeof(double);
+
+  // 1. Allocate Device Memory
+  double* d_t_old = nullptr;
+  double* d_t_new = nullptr;
+
+  // cudaMalloc allocates memory directly on the GPU's global memory (VRAM)
+  cudaMalloc(&d_t_old, bytes);
+  cudaMalloc(&d_t_new, bytes);
+
+  // 2. Transfer Initial State (Host -> Device)
+  // We only transfer across the slow PCIe bus ONCE before the loop begins.
+  cudaMemcpy(d_t_old, host_grid.t_old_ptr(), bytes, cudaMemcpyHostToDevice);
+  cudaMemcpy(d_t_new, host_grid.t_new_ptr(), bytes, cudaMemcpyHostToDevice);
+
+  // 3. Configure Execution Grid
+  dim3 threads(kBlockDimX, kBlockDimY);
+
+  // Ceiling division ensures we spawn enough thread blocks to cover
+  // the entire N x N grid, even if N is not perfectly divisible by 16.
+  dim3 blocks((n + threads.x - 1) / threads.x, (n + threads.y - 1) / threads.y);
+
+  // 4. Time-Stepping Loop (Entirely on Device)
+  for (int t = 0; t < iterations; ++t) {
+    // Launch the kernel asynchronously
+    StencilKernel<<<blocks, threads>>>(d_t_old, d_t_new, n);
+
+    // Explicit synchronization is required here. We must wait for all
+    // GPU thread blocks to finish writing to d_t_new before we swap.
+    cudaDeviceSynchronize();
+
+    // Swap device pointers in O(1) time.
+    // No data is moved; we just swap the memory addresses.
+    double* temp = d_t_old;
+    d_t_old = d_t_new;
+    d_t_new = temp;
+  }
+
+  // 5. Transfer Final State Back (Device -> Host)
+  // Because we swapped pointers at the end of every loop iteration,
+  // the final, correct state is always held by d_t_old.
+  cudaMemcpy(const_cast<double*>(host_grid.t_old_ptr()), d_t_old, bytes,
+             cudaMemcpyDeviceToHost);
+
+  // 6. Cleanup Device Memory to prevent memory leaks
+  cudaFree(d_t_old);
+  cudaFree(d_t_new);
 }
 
 }  // namespace heat_sim
