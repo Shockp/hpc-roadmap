@@ -18,6 +18,9 @@
 #endif
 #ifdef ENABLE_CUDA
 #include "solver_cuda.cuh"
+#ifdef ENABLE_OPENMP
+#include "solver_hybrid.cuh"
+#endif
 #endif
 
 int main(int argc, char** argv) {
@@ -30,6 +33,9 @@ int main(int argc, char** argv) {
 #endif
 #ifdef ENABLE_CUDA
               << ", 'cuda' (CUDA)"
+#ifdef ENABLE_OPENMP
+              << ", 'hybrid' (Hybrid CUDA+OpenMP)"
+#endif
 #endif
 #ifdef ENABLE_MPI
               << ", 'mpi_blocking' (MPI Blocking), 'mpi_nonblocking' (MPI "
@@ -120,6 +126,17 @@ int main(int argc, char** argv) {
     res.setup_time +=
         std::chrono::duration<double>(end_setup - start_setup).count();
   }
+#ifdef ENABLE_OPENMP
+  else if (mode == "hybrid") {
+    auto start_setup = std::chrono::high_resolution_clock::now();
+    heat_sim::Grid grid(n);
+    auto end_setup = std::chrono::high_resolution_clock::now();
+
+    res = heat_sim::SolverHybrid::Run(grid, iterations);
+    res.setup_time +=
+        std::chrono::duration<double>(end_setup - start_setup).count();
+  }
+#endif
 #endif
   else {
     std::cerr << "Error: Unknown execution mode '" << mode << "'.\n";
