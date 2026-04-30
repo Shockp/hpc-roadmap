@@ -16,4 +16,4 @@ class SolverCuda {
 
 }  // namespace heat_sim
 
-#endif
+#endif  // HEAT_DIFFUSION_SOLVER_CUDA_H_

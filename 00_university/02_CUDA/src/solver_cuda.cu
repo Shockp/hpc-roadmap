@@ -1,6 +1,8 @@
-#include <chrono>
-#include <cuda_runtime.h>
 #include "solver_cuda.cuh"
+
+#include <cuda_runtime.h>
+
+#include <chrono>
 
 namespace heat_sim {
 
@@ -91,7 +93,8 @@ ProfilerResult SolverCuda::Run(Grid& host_grid, int iterations) {
   cudaMemcpy(d_t_old, host_grid.t_old_ptr(), bytes, cudaMemcpyHostToDevice);
   cudaMemcpy(d_t_new, host_grid.t_new_ptr(), bytes, cudaMemcpyHostToDevice);
   auto end_comm1 = std::chrono::high_resolution_clock::now();
-  res.comm_time += std::chrono::duration<double>(end_comm1 - start_comm1).count();
+  res.comm_time +=
+      std::chrono::duration<double>(end_comm1 - start_comm1).count();
 
   // 3. Configure Execution Grid
   dim3 threads(kBlockDimX, kBlockDimY);
@@ -117,7 +120,8 @@ ProfilerResult SolverCuda::Run(Grid& host_grid, int iterations) {
     d_t_new = temp;
   }
   auto end_compute = std::chrono::high_resolution_clock::now();
-  res.compute_time += std::chrono::duration<double>(end_compute - start_compute).count();
+  res.compute_time +=
+      std::chrono::duration<double>(end_compute - start_compute).count();
 
   auto start_comm2 = std::chrono::high_resolution_clock::now();
   // 5. Transfer Final State Back (Device -> Host)
@@ -130,8 +134,9 @@ ProfilerResult SolverCuda::Run(Grid& host_grid, int iterations) {
   cudaFree(d_t_old);
   cudaFree(d_t_new);
   auto end_comm2 = std::chrono::high_resolution_clock::now();
-  res.comm_time += std::chrono::duration<double>(end_comm2 - start_comm2).count();
-  
+  res.comm_time +=
+      std::chrono::duration<double>(end_comm2 - start_comm2).count();
+
   return res;
 }
 
