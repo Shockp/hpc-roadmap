@@ -109,6 +109,25 @@ if command -v mpirun &>/dev/null; then
     fi
 fi
 
+# ── Detect perf availability ────────────────────────────────────────────────
+HAS_PERF=false
+if command -v perf &>/dev/null; then
+    PARANOID=$(cat /proc/sys/kernel/perf_event_paranoid 2>/dev/null || echo 99)
+    if [[ "$PARANOID" -gt 1 ]]; then
+        echo -e "${YELLOW}Warning:${RESET} perf_event_paranoid is set to ${BOLD}${PARANOID}${RESET} (needs \u2264 1 for IPC)."
+        read -rp "  Allow sudo to temporarily lower it? [y/N] " answer
+        if [[ "$answer" =~ ^[Yy]$ ]]; then
+            sudo sysctl -w kernel.perf_event_paranoid=1 > /dev/null 2>&1
+            echo -e "  ${GREEN}\u2713${RESET} perf_event_paranoid set to 1 for this session."
+            HAS_PERF=true
+        else
+            echo -e "  ${CYAN}Skipping IPC collection.${RESET} Column will show N/A."
+        fi
+    else
+        HAS_PERF=true
+    fi
+fi
+
 # ── Prepare output ──────────────────────────────────────────────────────────
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 if [[ -z "$RESULTS_FILE" ]]; then
@@ -116,7 +135,7 @@ if [[ -z "$RESULTS_FILE" ]]; then
 fi
 
 # TSV header
-echo -e "mode\tgrid_size\titeration\tsetup_s\tcompute_s\tcomm_s\ttotal_s" > "$RESULTS_FILE"
+echo -e "mode\tgrid_size\titeration\tsetup_s\tcompute_s\tcomm_s\ttotal_s\tipc" > "$RESULTS_FILE"
 
 # ── Helper: parse profiling output ──────────────────────────────────────────
 parse_result() {
@@ -129,6 +148,15 @@ parse_result() {
     total=$(echo "$output"  | grep "Total Time:"   | awk '{print $(NF-1)}')
 
     echo "${setup:-N/A} ${compute:-N/A} ${comm:-N/A} ${total:-N/A}"
+}
+
+# ── Helper: parse IPC from perf stat stderr ─────────────────────────────────
+parse_ipc() {
+    local perf_output="$1"
+    local ipc
+    # The perf output line looks like: "123,456 instructions  #  1.23  insn per cycle"
+    ipc=$(echo "$perf_output" | grep -i "insn per cycle" | awk -F'#' '{print $2}' | awk '{print $1}' | tr ',' '.' | head -n 1)
+    echo "${ipc:-N/A}"
 }
 
 # ── Print banner ────────────────────────────────────────────────────────────
@@ -149,10 +177,10 @@ echo -e "  ${CYAN}Output:${RESET}       $RESULTS_FILE"
 echo ""
 
 # ── Table header ────────────────────────────────────────────────────────────
-ROW_FMT="  %-16s │ %8s │ %3s │ %14s │ %14s │ %14s │ %14s"
-DIVIDER=$(printf "$ROW_FMT" "" "" "" "" "" "" "" | sed 's/ /─/g; s/│/┬/g')
-HEADER=$(printf "  ${BOLD}%-16s${RESET} │ ${BOLD}%8s${RESET} │ ${BOLD}%3s${RESET} │ ${BOLD}%14s${RESET} │ ${BOLD}%14s${RESET} │ ${BOLD}%14s${RESET} │ ${BOLD}%14s${RESET}" \
-    "Mode" "Grid" "Run" "Setup (s)" "Compute (s)" "Comm (s)" "Total (s)")
+ROW_FMT="  %-16s │ %8s │ %3s │ %14s │ %14s │ %14s │ %14s │ %8s"
+DIVIDER=$(printf "$ROW_FMT" "" "" "" "" "" "" "" "" | sed 's/ /─/g; s/│/┬/g')
+HEADER=$(printf "  ${BOLD}%-16s${RESET} │ ${BOLD}%8s${RESET} │ ${BOLD}%3s${RESET} │ ${BOLD}%14s${RESET} │ ${BOLD}%14s${RESET} │ ${BOLD}%14s${RESET} │ ${BOLD}%14s${RESET} │ ${BOLD}%8s${RESET}" \
+    "Mode" "Grid" "Run" "Setup (s)" "Compute (s)" "Comm (s)" "Total (s)" "IPC")
 
 echo "$DIVIDER"
 echo "$HEADER"
@@ -180,21 +208,41 @@ for mode in "${MODES[@]}"; do
                 CMD="$BINARY $n $ITERATIONS $mode"
             fi
 
-            # Execute and capture output
-            OUTPUT=$($CMD 2>&1) || {
-                echo -e "  ${RED}✗${RESET} ${mode} N=${n} rep=${rep} — ${YELLOW}FAILED${RESET}"
-                continue
-            }
+            # Execute and capture output (with perf if available)
+            PERF_TMP=$(mktemp "${PROJECT_DIR}/.perf_XXXXXX")
+            if $HAS_PERF; then
+                if [[ "$mode" == mpi_* ]]; then
+                    # For MPI: wrap the binary with perf, not mpirun itself
+                    PERF_CMD="mpirun --oversubscribe -np $MPI_PROCS env LC_ALL=C perf stat -e instructions,cycles -- $BINARY $n $ITERATIONS $mode"
+                else
+                    PERF_CMD="env LC_ALL=C perf stat -e instructions,cycles -- $CMD"
+                fi
+                OUTPUT=$($PERF_CMD 2>"$PERF_TMP") || {
+                    rm -f "$PERF_TMP"
+                    echo -e "  ${RED}✗${RESET} ${mode} N=${n} rep=${rep} — ${YELLOW}FAILED${RESET}"
+                    continue
+                }
+                PERF_OUTPUT=$(cat "$PERF_TMP")
+                ipc=$(parse_ipc "$PERF_OUTPUT")
+            else
+                OUTPUT=$($CMD 2>&1) || {
+                    rm -f "$PERF_TMP"
+                    echo -e "  ${RED}✗${RESET} ${mode} N=${n} rep=${rep} — ${YELLOW}FAILED${RESET}"
+                    continue
+                }
+                ipc="N/A"
+            fi
+            rm -f "$PERF_TMP"
 
             # Parse timings
             read -r setup compute comm total <<< "$(parse_result "$OUTPUT")"
 
             # Write TSV row
-            echo -e "${mode}\t${n}\t${rep}\t${setup}\t${compute}\t${comm}\t${total}" >> "$RESULTS_FILE"
+            echo -e "${mode}\t${n}\t${rep}\t${setup}\t${compute}\t${comm}\t${total}\t${ipc}" >> "$RESULTS_FILE"
 
             # Pretty-print table row
             printf "${ROW_FMT}\n" \
-                "$mode" "${n}" "${rep}" "$setup" "$compute" "$comm" "$total"
+                "$mode" "${n}" "${rep}" "$setup" "$compute" "$comm" "$total" "$ipc"
         done
     done
 done
