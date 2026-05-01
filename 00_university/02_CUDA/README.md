@@ -88,8 +88,36 @@ mpirun -np 4 ./heat_sim 4096 1000 mpi_nonblocking
 
 ## 📊 Benchmarking
 
-A benchmarking script is provided in the `scripts/` directory to automate performance evaluation across different modes and grid sizes.
+An automated benchmarking script is provided in `scripts/` to sweep all available solver modes across multiple grid sizes, collect profiling data, and export results as a TSV file.
+
+### Quick Start
 
 ```bash
 ./scripts/run_benchmarks.sh
 ```
+
+### Options
+
+| Flag | Description | Default |
+| :--- | :--- | :--- |
+| `-b <path>` | Path to `heat_sim` binary | `build/heat_sim` |
+| `-g <sizes>` | Comma-separated grid sizes | `64,256,1024,2048,4096` |
+| `-i <iters>` | Simulation iterations per run | `500` |
+| `-r <reps>` | Repetitions per configuration | `1` |
+| `-n <nprocs>` | Number of MPI processes | `4` |
+| `-o <file>` | Output TSV file path | `results_<timestamp>.tsv` |
+
+### Examples
+
+```bash
+# Run 3 repetitions per configuration for statistical averaging
+./scripts/run_benchmarks.sh -r 3
+
+# Benchmark only small grids with 200 iterations
+./scripts/run_benchmarks.sh -g 64,128,256 -i 200
+
+# Save results to a specific file
+./scripts/run_benchmarks.sh -o benchmarks/run1.tsv
+```
+
+The script **auto-detects** which solver modes (`seq`, `omp`, `cuda`, `hybrid`, `mpi_*`) are compiled into your binary and only benchmarks what is available.
