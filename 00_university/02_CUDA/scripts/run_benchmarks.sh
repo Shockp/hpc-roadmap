@@ -15,7 +15,7 @@ set -euo pipefail
 
 # ── Configurable defaults ────────────────────────────────────────────────────
 GRID_SIZES=(64 256 1024 2048 4096)
-ITERATIONS=500
+ITERATIONS=1000
 REPETITIONS=1
 MPI_PROCS=4
 RESULTS_FILE=""
@@ -149,9 +149,10 @@ echo -e "  ${CYAN}Output:${RESET}       $RESULTS_FILE"
 echo ""
 
 # ── Table header ────────────────────────────────────────────────────────────
-DIVIDER="──────────────────┬──────────┬─────┬────────────┬────────────┬────────────┬────────────"
-HEADER=$(printf "  ${BOLD}%-16s${RESET} │ ${BOLD}%8s${RESET} │ ${BOLD}%3s${RESET} │ ${BOLD}%10s${RESET} │ ${BOLD}%10s${RESET} │ ${BOLD}%10s${RESET} │ ${BOLD}%10s${RESET}" \
-    "Mode" "Grid" "Run" "Setup (s)" "Compute(s)" "Comm (s)" "Total (s)")
+ROW_FMT="  %-16s │ %8s │ %3s │ %14s │ %14s │ %14s │ %14s"
+DIVIDER=$(printf "$ROW_FMT" "" "" "" "" "" "" "" | sed 's/ /─/g; s/│/┬/g')
+HEADER=$(printf "  ${BOLD}%-16s${RESET} │ ${BOLD}%8s${RESET} │ ${BOLD}%3s${RESET} │ ${BOLD}%14s${RESET} │ ${BOLD}%14s${RESET} │ ${BOLD}%14s${RESET} │ ${BOLD}%14s${RESET}" \
+    "Mode" "Grid" "Run" "Setup (s)" "Compute (s)" "Comm (s)" "Total (s)")
 
 echo "$DIVIDER"
 echo "$HEADER"
@@ -192,7 +193,7 @@ for mode in "${MODES[@]}"; do
             echo -e "${mode}\t${n}\t${rep}\t${setup}\t${compute}\t${comm}\t${total}" >> "$RESULTS_FILE"
 
             # Pretty-print table row
-            printf "  %-16s │ %8s │ %3s │ %10s │ %10s │ %10s │ %10s\n" \
+            printf "${ROW_FMT}\n" \
                 "$mode" "${n}" "${rep}" "$setup" "$compute" "$comm" "$total"
         done
     done

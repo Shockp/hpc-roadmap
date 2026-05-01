@@ -102,7 +102,7 @@ An automated benchmarking script is provided in `scripts/` to sweep all availabl
 | :--- | :--- | :--- |
 | `-b <path>` | Path to `heat_sim` binary | `build/heat_sim` |
 | `-g <sizes>` | Comma-separated grid sizes | `64,256,1024,2048,4096` |
-| `-i <iters>` | Simulation iterations per run | `500` |
+| `-i <iters>` | Simulation iterations per run | `1000` |
 | `-r <reps>` | Repetitions per configuration | `1` |
 | `-n <nprocs>` | Number of MPI processes | `4` |
 | `-o <file>` | Output TSV file path | `results_<timestamp>.tsv` |
