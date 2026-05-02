@@ -33,3 +33,11 @@ This directory contains detailed, line-by-line documentation for each solver imp
 | **MPI** | Process-level (Multi-node) | Massive grids, Clusters | Network Latency |
 | **CUDA** | Thread-level (GPU) | Large grids, Single GPU | PCIe Transfer Overhead |
 | **Hybrid** | Multi-GPU / Multi-node | Maximum Scale | Synchronization overhead |
+
+---
+
+## 🔬 Advanced Study
+For a deeper look at how these implementations compare to industry standards and advanced HPC patterns, see the following analysis documents:
+
+- **[HPC Comparative Analysis](../analysis/hpc_comparison.md)**: Jacobi vs Gauss-Seidel, 1D vs 2D decomposition, and GPU patterns.
+- **[OpenMP Optimization Guide](../analysis/openmp_optimization.md)**: Deep-dive into scheduling, parallel regions, and loop collapsing.
