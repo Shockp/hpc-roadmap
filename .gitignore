@@ -31,3 +31,6 @@ install_manifest.txt
 # Quick executables
 a.out
 *.exe
+
+# Other files
+*.tsv
