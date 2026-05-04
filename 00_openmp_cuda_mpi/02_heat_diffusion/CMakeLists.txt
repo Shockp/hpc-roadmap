@@ -35,6 +35,7 @@ if(OpenMP_CXX_FOUND)
     endif()
 endif()
 
+# Check for MPI support
 find_package(MPI)
 if(MPI_CXX_FOUND)
     list(APPEND HEAT_SIM_SOURCES 
@@ -55,7 +56,10 @@ endif()
 target_include_directories(heat_sim PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 # Compilation flags oriented towards HPC and extreme performance.
-target_compile_options(heat_sim PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-O3 -march=native -Wall -Wextra -Werror -pedantic>)
+target_compile_options(heat_sim PRIVATE 
+    $<$<COMPILE_LANGUAGE:CXX>:-O3 -march=native -Wall -Wextra -Werror -pedantic>
+    $<$<COMPILE_LANGUAGE:CUDA>:-O3 -Xcompiler -Wall,-Wextra>
+)
 
 if(OpenMP_CXX_FOUND)
     target_link_libraries(heat_sim PUBLIC OpenMP::OpenMP_CXX)
@@ -74,10 +78,32 @@ find_program(CLANG_FORMAT_EXE clang-format)
 if(CLANG_FORMAT_EXE)
     file(GLOB_RECURSE ALL_SOURCE_FILES
         "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cc"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cu"
         "${CMAKE_CURRENT_SOURCE_DIR}/include/*.h"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/*.cuh"
     )
     add_custom_target(format
         COMMAND ${CLANG_FORMAT_EXE} -i -style=file ${ALL_SOURCE_FILES}
         COMMENT "Applying Google C++ Style Guide via .clang-format..."
     )
 endif()
+
+# -----------------------------------------------------------------------------
+# HELPER TARGETS: Quick Run and Benchmarking.
+# -----------------------------------------------------------------------------
+
+# Run a small validation simulation (Sequential, 256x256, 100 iterations)
+add_custom_target(run
+    COMMAND heat_sim 256 100 seq
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    DEPENDS heat_sim
+    COMMENT "Running validation simulation (Sequential, 256x256)..."
+)
+
+# Run the full automated benchmarking suite
+add_custom_target(benchmark
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/run_benchmarks.sh
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    DEPENDS heat_sim
+    COMMENT "Launching automated benchmark suite..."
+)

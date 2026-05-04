@@ -34,4 +34,4 @@ a.out
 
 # Other files
 *.tsv
-*.perf
+*.perf*
